@@ -144,11 +144,15 @@ export default function DataExplorer() {
                 {allClasses.map(c => <SelectItem key={c} value={c}>Class {c}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Input 
-                placeholder="Filter by Publisher..."
-                value={publisherFilter}
-                onChange={e => setPublisherFilter(e.target.value)}
-            />
+            <Select onValueChange={(value) => setPublisherFilter(value === 'all' ? '' : value)} defaultValue="">
+              <SelectTrigger>
+                <SelectValue placeholder="Filter by Publisher" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Publishers</SelectItem>
+                {allPublishers.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+              </SelectContent>
+            </Select>
             <Select onValueChange={(value) => setBookTypeFilter(value as BookType | 'all')} defaultValue="all">
                 <SelectTrigger>
                     <SelectValue placeholder="Filter by Type" />
