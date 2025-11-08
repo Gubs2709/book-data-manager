@@ -23,3 +23,11 @@ export interface FrequentBookData {
     type: BookType;
     pages?: number;
 }
+
+export interface BookFilters {
+    bookName: string;
+    subject: string;
+    publisher: string;
+}
+
+    

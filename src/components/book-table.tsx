@@ -19,8 +19,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import type { Book } from "@/lib/types";
-import { Search } from "lucide-react";
+import type { Book, BookFilters } from "@/lib/types";
 
 interface BookTableProps {
   title: string;
@@ -29,8 +28,8 @@ interface BookTableProps {
   onBookUpdate: (bookId: number, field: keyof Omit<Book, 'id' | 'finalPrice'>, value: string | number) => void;
   onApplyAll: (field: "discount" | "tax", value: number) => void;
   isNotebookTable?: boolean;
-  filterValue: string;
-  onFilterChange: (value: string) => void;
+  filters: BookFilters;
+  onFilterChange: (setter: React.Dispatch<React.SetStateAction<BookFilters>>) => void;
 }
 
 export function BookTable({
@@ -40,7 +39,7 @@ export function BookTable({
   onBookUpdate,
   onApplyAll,
   isNotebookTable = false,
-  filterValue,
+  filters,
   onFilterChange,
 }: BookTableProps) {
   const [allDiscount, setAllDiscount] = useState(0);
@@ -52,6 +51,10 @@ export function BookTable({
       currency: "INR",
     }).format(value);
   };
+  
+  const handleFilter = (column: keyof BookFilters, value: string) => {
+    onFilterChange((prev) => ({...prev, [column]: value}))
+  }
 
   return (
     <Card className="flex h-full flex-col shadow-lg">
@@ -60,17 +63,6 @@ export function BookTable({
           <div>
             <CardTitle className="text-primary">{title}</CardTitle>
             <CardDescription>{description}</CardDescription>
-          </div>
-          <div className="relative mt-4 sm:mt-0">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Filter books..."
-              className="w-full sm:w-[250px] pl-9"
-              value={filterValue}
-              onChange={(e) => onFilterChange(e.target.value)}
-              aria-label={`Filter ${title}`}
-            />
           </div>
         </div>
         <div className="mt-4 flex flex-col space-y-4 sm:flex-row sm:space-y-0 sm:space-x-4">
@@ -115,6 +107,34 @@ export function BookTable({
                 <TableHead className="w-[120px] text-right font-semibold">Discount (%)</TableHead>
                 <TableHead className="w-[120px] text-right font-semibold">Tax (%)</TableHead>
                 <TableHead className="text-right font-semibold">Final Price</TableHead>
+              </TableRow>
+               <TableRow className="border-t">
+                  <TableHead>
+                      <Input 
+                        placeholder="Filter by name..." 
+                        value={filters.bookName} 
+                        onChange={(e) => handleFilter('bookName', e.target.value)}
+                        className="h-8"
+                      />
+                  </TableHead>
+                   <TableHead>
+                      <Input 
+                        placeholder="Filter by subject..." 
+                        value={filters.subject} 
+                        onChange={(e) => handleFilter('subject', e.target.value)}
+                        className="h-8"
+                      />
+                  </TableHead>
+                   <TableHead>
+                      <Input 
+                        placeholder="Filter by publisher..." 
+                        value={filters.publisher} 
+                        onChange={(e) => handleFilter('publisher', e.target.value)}
+                        className="h-8"
+                      />
+                  </TableHead>
+                  {isNotebookTable && <TableHead></TableHead>}
+                  <TableHead colSpan={4}></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -205,3 +225,5 @@ export function BookTable({
     </Card>
   );
 }
+
+    

@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect } from "react";
-import type { Book, FrequentBookData, BookType } from "@/lib/types";
+import type { Book, FrequentBookData, BookType, BookFilters } from "@/lib/types";
 import { TEXTBOOKS_MOCK, NOTEBOOKS_MOCK } from "@/lib/data";
 import { BookTable } from "./book-table";
 import Header from "./header";
@@ -40,6 +40,12 @@ const createBookId = (book: Partial<Book>, type: BookType): string => {
   return id.replace(/[^a-zA-Z0-9-]/g, '');
 };
 
+const initialFilters: BookFilters = {
+    bookName: "",
+    subject: "",
+    publisher: "",
+};
+
 export default function CalculatorDashboard() {
   const [textbooks, setTextbooks] = useState<Book[]>([]);
   const [notebooks, setNotebooks] = useState<Book[]>([]);
@@ -62,8 +68,9 @@ export default function CalculatorDashboard() {
   const [publisherDiscount, setPublisherDiscount] = useState<number>(0);
 
   // Filter state
-  const [textbookFilter, setTextbookFilter] = useState("");
-  const [notebookFilter, setNotebookFilter] = useState("");
+  const [textbookFilters, setTextbookFilters] = useState<BookFilters>(initialFilters);
+  const [notebookFilters, setNotebookFilters] = useState<BookFilters>(initialFilters);
+
 
   const frequentBookDataQuery = useMemoFirebase(() => 
     user && firestore ? collection(firestore, 'users', user.uid, 'frequent_book_data') : null
@@ -112,25 +119,24 @@ export default function CalculatorDashboard() {
     });
   }
 
+  const applyFilters = (books: Book[], filters: BookFilters): Book[] => {
+    return books.filter(book => {
+        return (
+            book.bookName.toLowerCase().includes(filters.bookName.toLowerCase()) &&
+            book.subject.toLowerCase().includes(filters.subject.toLowerCase()) &&
+            book.publisher.toLowerCase().includes(filters.publisher.toLowerCase())
+        );
+    });
+  };
+
   const filteredTextbooks = useMemo(() => {
-    if (!textbookFilter) return textbooks;
-    const lowercasedFilter = textbookFilter.toLowerCase();
-    return textbooks.filter(book => 
-      book.bookName.toLowerCase().includes(lowercasedFilter) ||
-      book.subject.toLowerCase().includes(lowercasedFilter) ||
-      book.publisher.toLowerCase().includes(lowercasedFilter)
-    );
-  }, [textbooks, textbookFilter]);
+    return applyFilters(textbooks, textbookFilters);
+  }, [textbooks, textbookFilters]);
 
   const filteredNotebooks = useMemo(() => {
-    if (!notebookFilter) return notebooks;
-    const lowercasedFilter = notebookFilter.toLowerCase();
-    return notebooks.filter(book =>
-      book.bookName.toLowerCase().includes(lowercasedFilter) ||
-      book.subject.toLowerCase().includes(lowercasedFilter) ||
-      book.publisher.toLowerCase().includes(lowercasedFilter)
-    );
-  }, [notebooks, notebookFilter]);
+    return applyFilters(notebooks, notebookFilters);
+  }, [notebooks, notebookFilters]);
+
 
   const totals = useMemo(() => {
     const textbookTotal = filteredTextbooks.reduce((sum, book) => sum + book.finalPrice, 0);
@@ -235,8 +241,8 @@ export default function CalculatorDashboard() {
     setIsDataLoaded(false);
     setTextbooks([]);
     setNotebooks([]);
-    setTextbookFilter("");
-    setNotebookFilter("");
+    setTextbookFilters(initialFilters);
+    setNotebookFilters(initialFilters);
     if(fileInputRef.current) {
         fileInputRef.current.value = "";
     }
@@ -539,8 +545,8 @@ export default function CalculatorDashboard() {
                  books={filteredTextbooks}
                  onBookUpdate={(id, field, value) => handleUpdateBook('textbooks', id, field, value)}
                  onApplyAll={(field, value) => handleApplyAll('textbooks', field, value)}
-                 filterValue={textbookFilter}
-                 onFilterChange={setTextbookFilter}
+                 filters={textbookFilters}
+                 onFilterChange={setTextbookFilters}
                />
                <BookTable
                  title="Notebooks"
@@ -549,8 +555,8 @@ export default function CalculatorDashboard() {
                  onBookUpdate={(id, field, value) => handleUpdateBook('notebooks', id, field, value)}
                  onApplyAll={(field, value) => handleApplyAll('notebooks', field, value)}
                  isNotebookTable={true}
-                 filterValue={notebookFilter}
-                 onFilterChange={setNotebookFilter}
+                 filters={notebookFilters}
+                 onFilterChange={setNotebookFilters}
                />
                <Card className="shadow-lg">
                 <CardHeader>
@@ -601,3 +607,5 @@ export default function CalculatorDashboard() {
     </>
   );
 }
+
+    
