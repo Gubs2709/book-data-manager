@@ -24,14 +24,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calculator, Download, FileUp, Undo2, BookOpen, GraduationCap, Save, Tags, Edit } from "lucide-react";
+import { Calculator, Download, FileUp, Undo2, BookOpen, GraduationCap, Save, Tags, Edit, X, Check, ChevronsUpDown } from "lucide-react";
 import { Separator } from "./ui/separator";
 import * as XLSX from 'xlsx';
 import { useToast } from "@/hooks/use-toast";
 import { useFirebase, useUser, useCollection, useMemoFirebase } from "@/firebase";
 import { collection, doc, writeBatch } from "firebase/firestore";
 import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates";
-import { Textarea } from "./ui/textarea";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "./ui/command";
+import { Badge } from "./ui/badge";
 
 const createBookId = (book: Partial<Book>, type: BookType): string => {
   let id = `${book.bookName}-${book.publisher}-${type}`;
@@ -73,10 +75,11 @@ export default function CalculatorDashboard() {
   const [notebookFilters, setNotebookFilters] = useState<BookFilters>(initialFilters);
   
   // Bulk edit state
-  const [bulkBookNames, setBulkBookNames] = useState("");
+  const [bulkSelectedBooks, setBulkSelectedBooks] = useState<string[]>([]);
   const [bulkPrice, setBulkPrice] = useState<string>("");
   const [bulkDiscount, setBulkDiscount] = useState<string>("");
   const [bulkTax, setBulkTax] = useState<string>("");
+  const [isBulkPickerOpen, setIsBulkPickerOpen] = useState(false);
 
 
   const frequentBookDataQuery = useMemoFirebase(() => 
@@ -157,6 +160,12 @@ export default function CalculatorDashboard() {
     const frequentPublishers = frequentBookData?.map(item => item.publisher) || [];
     const allPublishers = [...currentPublishers, ...frequentPublishers];
     return [...new Set(allPublishers)].filter(Boolean).sort();
+  }, [textbooks, notebooks, frequentBookData]);
+
+  const allBookNames = useMemo(() => {
+    const currentBookNames = [...textbooks, ...notebooks].map(book => book.bookName);
+    const frequentBookNames = frequentBookData?.map(item => item.bookName) || [];
+    return [...new Set([...currentBookNames, ...frequentBookNames])].filter(Boolean).sort();
   }, [textbooks, notebooks, frequentBookData]);
 
   const handleProcessMockData = () => {
@@ -325,9 +334,9 @@ export default function CalculatorDashboard() {
   };
   
   const handleBulkUpdate = () => {
-    const bookNamesToUpdate = bulkBookNames.split('\n').filter(name => name.trim() !== "").map(name => name.trim().toLowerCase());
+    const bookNamesToUpdate = bulkSelectedBooks.map(name => name.trim().toLowerCase());
     if (bookNamesToUpdate.length === 0) {
-      toast({ variant: "destructive", title: "Error", description: "Please enter at least one book name." });
+      toast({ variant: "destructive", title: "Error", description: "Please select at least one book." });
       return;
     }
 
@@ -363,7 +372,7 @@ export default function CalculatorDashboard() {
 
     if (booksUpdatedCount > 0) {
       toast({ title: "Success", description: `Updated ${booksUpdatedCount} book(s).` });
-      setBulkBookNames("");
+      setBulkSelectedBooks([]);
       setBulkPrice("");
       setBulkDiscount("");
       setBulkTax("");
@@ -604,13 +613,63 @@ export default function CalculatorDashboard() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="bulk-book-names">Book Names (one per line)</Label>
-                    <Textarea 
-                      id="bulk-book-names"
-                      placeholder="Enter book names here..."
-                      value={bulkBookNames}
-                      onChange={(e) => setBulkBookNames(e.target.value)}
-                    />
+                    <Label>Book Names</Label>
+                    <Popover open={isBulkPickerOpen} onOpenChange={setIsBulkPickerOpen}>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="outline"
+                                role="combobox"
+                                aria-expanded={isBulkPickerOpen}
+                                className="w-full justify-between h-auto"
+                            >
+                                <div className="flex flex-wrap gap-1">
+                                    {bulkSelectedBooks.length > 0 ? bulkSelectedBooks.map(book => (
+                                        <Badge key={book} variant="secondary" className="mr-1">
+                                            {book}
+                                            <button
+                                                className="ml-1 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setBulkSelectedBooks(bulkSelectedBooks.filter(b => b !== book));
+                                                }}
+                                            >
+                                                <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                                            </button>
+                                        </Badge>
+                                    )) : "Select books..."}
+                                </div>
+                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                            <Command>
+                                <CommandInput placeholder="Search book..." />
+                                <CommandList>
+                                    <CommandEmpty>No book found.</CommandEmpty>
+                                    <CommandGroup>
+                                        {allBookNames.map((book) => (
+                                            <CommandItem
+                                                key={book}
+                                                value={book}
+                                                onSelect={(currentValue) => {
+                                                    setBulkSelectedBooks(
+                                                        bulkSelectedBooks.includes(currentValue)
+                                                            ? bulkSelectedBooks.filter(b => b !== currentValue)
+                                                            : [...bulkSelectedBooks, currentValue]
+                                                    )
+                                                }}
+                                            >
+                                                <Check
+                                                    className={`mr-2 h-4 w-4 ${bulkSelectedBooks.includes(book) ? "opacity-100" : "opacity-0"}`}
+                                                />
+                                                {book}
+                                            </CommandItem>
+                                        ))}
+                                    </CommandGroup>
+                                </CommandList>
+                            </Command>
+                        </PopoverContent>
+                    </Popover>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div className="space-y-2">
