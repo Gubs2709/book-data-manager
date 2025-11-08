@@ -1,9 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { X, Check } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
+import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -64,6 +62,7 @@ export function MultiSelect({
           type="button"
           variant="outline"
           role="combobox"
+          aria-label={placeholder}
           disabled={disabled}
           className="w-full justify-between"
         >
@@ -71,7 +70,7 @@ export function MultiSelect({
             {selected.length === 0
               ? placeholder || "Select..."
               : selected.length === 1
-              ? options.find(o => o.value === selected[0])?.label
+              ? options.find((o) => o.value === selected[0])?.label
               : `${selected.length} selected`}
           </span>
         </Button>
@@ -89,9 +88,7 @@ export function MultiSelect({
                   className="flex items-center justify-between cursor-pointer hover:bg-accent hover:text-accent-foreground"
                 >
                   <span>{opt.label}</span>
-                  {selected.includes(opt.value) && (
-                    <Check className="h-4 w-4" />
-                  )}
+                  {selected.includes(opt.value) && <Check className="h-4 w-4" />}
                 </CommandItem>
               ))}
             </CommandGroup>
@@ -99,9 +96,12 @@ export function MultiSelect({
               <>
                 <Separator />
                 <CommandGroup>
-                    <CommandItem onSelect={handleClear} className="justify-center text-center cursor-pointer hover:bg-accent hover:text-accent-foreground">
-                        Clear filters
-                    </CommandItem>
+                  <CommandItem
+                    onSelect={handleClear}
+                    className="justify-center text-center cursor-pointer hover:bg-accent hover:text-accent-foreground"
+                  >
+                    Clear filters
+                  </CommandItem>
                 </CommandGroup>
               </>
             )}

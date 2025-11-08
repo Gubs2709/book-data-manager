@@ -3,12 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useFirebase, useUser } from "@/firebase";
-import {
-  collectionGroup,
-  getDocs,
-  deleteDoc,
-  doc,
-} from "firebase/firestore";
+import { collectionGroup, getDocs, deleteDoc, doc } from "firebase/firestore";
 import * as XLSX from "xlsx";
 import {
   Card,
@@ -71,8 +66,16 @@ const safeNumber = (val: any): number => {
 
 // 🎨 Bar colors
 const COLORS = [
-  "#4F46E5", "#10B981", "#F59E0B", "#EF4444", "#3B82F6",
-  "#8B5CF6", "#EC4899", "#14B8A6", "#F97316", "#6366F1",
+  "#4F46E5",
+  "#10B981",
+  "#F59E0B",
+  "#EF4444",
+  "#3B82F6",
+  "#8B5CF6",
+  "#EC4899",
+  "#14B8A6",
+  "#F97316",
+  "#6366F1",
 ];
 
 export default function DataExplorer() {
@@ -111,7 +114,11 @@ export default function DataExplorer() {
           id: d.id,
           path: d.ref.path,
           ...data,
-          type: type,
+          type,
+          class: data.class || "Unknown",
+          courseCombination: data.courseCombination || "N/A",
+          bookName: data.bookName || "Untitled",
+          publisher: data.publisher || "Unknown",
           finalPrice: safeNumber(data.finalPrice),
           price: safeNumber(data.price),
           discount: safeNumber(data.discount),
@@ -119,8 +126,12 @@ export default function DataExplorer() {
         };
       };
 
-      const textbooks = textbooksSnap.docs.map((d) => sanitizeRawDoc(d, "Textbook"));
-      const notebooks = notebooksSnap.docs.map((d) => sanitizeRawDoc(d, "Notebook"));
+      const textbooks = textbooksSnap.docs.map((d) =>
+        sanitizeRawDoc(d, "Textbook")
+      );
+      const notebooks = notebooksSnap.docs.map((d) =>
+        sanitizeRawDoc(d, "Notebook")
+      );
 
       setBooks([...textbooks, ...notebooks]);
       toast({ title: "Success", description: "Data loaded successfully!" });
@@ -154,17 +165,17 @@ export default function DataExplorer() {
   const summary = useMemo(() => {
     const totalBooks = filteredBooks.length;
     const totalValue = filteredBooks.reduce(
-      (sum, b) => sum + b.finalPrice,
+      (sum, b) => sum + safeNumber(b.finalPrice),
       0
     );
     const avgDiscount =
       totalBooks > 0
-        ? filteredBooks.reduce((sum, b) => sum + b.discount, 0) /
+        ? filteredBooks.reduce((sum, b) => sum + safeNumber(b.discount), 0) /
           totalBooks
         : 0;
     const avgTax =
       totalBooks > 0
-        ? filteredBooks.reduce((sum, b) => sum + b.tax, 0) /
+        ? filteredBooks.reduce((sum, b) => sum + safeNumber(b.tax), 0) /
           totalBooks
         : 0;
     return { totalBooks, totalValue, avgDiscount, avgTax };
@@ -174,27 +185,28 @@ export default function DataExplorer() {
   const classChartData = useMemo(() => {
     const grouped = filteredBooks.reduce((acc, b) => {
       const key = b.class || "Unknown";
-      const value = chartMode === "cost" ? b.finalPrice : 1;
-      acc[key] = (acc[key] || 0) + safeNumber(value);
+      const value = chartMode === "cost" ? safeNumber(b.finalPrice) : 1;
+      acc[key] = (acc[key] || 0) + value;
       return acc;
     }, {} as Record<string, number>);
-    return Object.entries(grouped).map(([name, value]) => ({
-      name: `Class ${name}`,
-      value,
-    }));
+    return Object.entries(grouped)
+      .map(([name, value]) => ({
+        name: `Class ${name}`,
+        value: safeNumber(value),
+      }))
+      .filter((d) => !isNaN(d.value));
   }, [filteredBooks, chartMode]);
 
   const publisherChartData = useMemo(() => {
     const grouped = filteredBooks.reduce((acc, b) => {
       const key = b.publisher || "Unknown";
-      const value = chartMode === "cost" ? b.finalPrice : 1;
-      acc[key] = (acc[key] || 0) + safeNumber(value);
+      const value = chartMode === "cost" ? safeNumber(b.finalPrice) : 1;
+      acc[key] = (acc[key] || 0) + value;
       return acc;
     }, {} as Record<string, number>);
-    return Object.entries(grouped).map(([name, value]) => ({
-      name,
-      value,
-    }));
+    return Object.entries(grouped)
+      .map(([name, value]) => ({ name, value: safeNumber(value) }))
+      .filter((d) => !isNaN(d.value));
   }, [filteredBooks, chartMode]);
 
   // 🗑 Delete all
@@ -235,10 +247,10 @@ export default function DataExplorer() {
         "Book Name": b.bookName,
         Type: b.type,
         Publisher: b.publisher,
-        Price: b.price,
-        Discount: b.discount,
-        Tax: b.tax,
-        "Final Price": b.finalPrice,
+        Price: safeNumber(b.price),
+        Discount: safeNumber(b.discount),
+        Tax: safeNumber(b.tax),
+        "Final Price": safeNumber(b.finalPrice),
       }))
     );
     const wb = XLSX.utils.book_new();
@@ -302,19 +314,57 @@ export default function DataExplorer() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card><CardContent className="p-4"><h3>Total Books</h3><p className="text-3xl font-bold">{summary.totalBooks}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><h3>Total Value</h3><p className="text-3xl font-bold">{formatCurrency(summary.totalValue)}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><h3>Avg Discount</h3><p className="text-3xl font-bold">{summary.avgDiscount.toFixed(1)}%</p></CardContent></Card>
-        <Card><CardContent className="p-4"><h3>Avg Tax</h3><p className="text-3xl font-bold">{summary.avgTax.toFixed(1)}%</p></CardContent></Card>
+        <Card>
+          <CardContent className="p-4">
+            <h3>Total Books</h3>
+            <p className="text-3xl font-bold">{summary.totalBooks}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <h3>Total Value</h3>
+            <p className="text-3xl font-bold">{formatCurrency(summary.totalValue)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <h3>Avg Discount</h3>
+            <p className="text-3xl font-bold">{summary.avgDiscount.toFixed(1)}%</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <h3>Avg Tax</h3>
+            <p className="text-3xl font-bold">{summary.avgTax.toFixed(1)}%</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Filters */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-muted-foreground">Filters</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <MultiSelect options={Array.from(new Set(books.map((b) => b.class))).filter(Boolean).map((c) => ({ label: `Class ${c}`, value: c }))} placeholder="Filter by Class" onValueChange={setFilterClasses} />
-          <MultiSelect options={Array.from(new Set(books.map((b) => b.courseCombination))).filter(Boolean).map((c) => ({ label: c, value: c }))} placeholder="Filter by Course" onValueChange={setFilterCourses} />
-          <MultiSelect options={Array.from(new Set(books.map((b) => b.publisher))).filter(Boolean).map((p) => ({ label: p, value: p }))} placeholder="Filter by Publisher" onValueChange={setFilterPublishers} />
+          <MultiSelect
+            options={Array.from(new Set(books.map((b) => b.class)))
+              .filter(Boolean)
+              .map((c) => ({ label: `Class ${c}`, value: c }))}
+            placeholder="Filter by Class"
+            onValueChange={setFilterClasses}
+          />
+          <MultiSelect
+            options={Array.from(new Set(books.map((b) => b.courseCombination)))
+              .filter(Boolean)
+              .map((c) => ({ label: c, value: c }))}
+            placeholder="Filter by Course"
+            onValueChange={setFilterCourses}
+          />
+          <MultiSelect
+            options={Array.from(new Set(books.map((b) => b.publisher)))
+              .filter(Boolean)
+              .map((p) => ({ label: p, value: p }))}
+            placeholder="Filter by Publisher"
+            onValueChange={setFilterPublishers}
+          />
         </div>
       </section>
 
@@ -324,9 +374,7 @@ export default function DataExplorer() {
         <Switch
           id="chartMode"
           checked={chartMode === "count"}
-          onCheckedChange={(checked) =>
-            setChartMode(checked ? "count" : "cost")
-          }
+          onCheckedChange={(checked) => setChartMode(checked ? "count" : "cost")}
         />
         <span className="text-sm text-muted-foreground">
           {chartMode === "cost" ? "Total Cost (₹)" : "Book Count"}
@@ -346,14 +394,26 @@ export default function DataExplorer() {
             <div className="grid lg:grid-cols-2 gap-8">
               {/* Cost / Count by Class */}
               <Card>
-                <CardHeader><CardTitle>{chartMode === "cost" ? "Cost" : "Book Count"} by Class</CardTitle></CardHeader>
+                <CardHeader>
+                  <CardTitle>
+                    {chartMode === "cost" ? "Cost" : "Book Count"} by Class
+                  </CardTitle>
+                </CardHeader>
                 <CardContent className="h-[320px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={classChartData}>
                       <XAxis dataKey="name" tickLine={false} />
                       <YAxis tickLine={false} />
-                      <Tooltip formatter={(v: number) => chartMode === "cost" ? formatCurrency(v) : v} />
-                      <Bar dataKey="value" fill="#4F46E5" radius={[4, 4, 0, 0]} />
+                      <Tooltip
+                        formatter={(v: number) =>
+                          chartMode === "cost" ? formatCurrency(v) : v
+                        }
+                      />
+                      <Bar
+                        dataKey="value"
+                        fill="#4F46E5"
+                        radius={[4, 4, 0, 0]}
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -361,13 +421,26 @@ export default function DataExplorer() {
 
               {/* Cost / Count by Publisher */}
               <Card>
-                <CardHeader><CardTitle>{chartMode === "cost" ? "Cost" : "Book Count"} by Publisher</CardTitle></CardHeader>
+                <CardHeader>
+                  <CardTitle>
+                    {chartMode === "cost" ? "Cost" : "Book Count"} by Publisher
+                  </CardTitle>
+                </CardHeader>
                 <CardContent className="h-[320px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={publisherChartData} margin={{ bottom: 80 }}>
-                      <XAxis dataKey="name" angle={-30} textAnchor="end" height={80} />
+                      <XAxis
+                        dataKey="name"
+                        angle={-30}
+                        textAnchor="end"
+                        height={80}
+                      />
                       <YAxis />
-                      <Tooltip formatter={(v: number) => chartMode === "cost" ? formatCurrency(v) : v} />
+                      <Tooltip
+                        formatter={(v: number) =>
+                          chartMode === "cost" ? formatCurrency(v) : v
+                        }
+                      />
                       <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                         {publisherChartData.map((_, i) => (
                           <Cell key={i} fill={COLORS[i % COLORS.length]} />
@@ -388,14 +461,18 @@ export default function DataExplorer() {
             transition={{ duration: 0.3 }}
           >
             <Card>
-              <CardHeader><CardTitle>Filtered Books Table</CardTitle></CardHeader>
+              <CardHeader>
+                <CardTitle>Filtered Books Table</CardTitle>
+              </CardHeader>
               <CardContent>
                 {isLoading ? (
                   <div className="text-center py-10 text-muted-foreground flex items-center justify-center">
                     <Loader2 className="animate-spin h-5 w-5 mr-3" /> Loading...
                   </div>
                 ) : filteredBooks.length === 0 ? (
-                  <p className="text-center py-10 text-muted-foreground">No data found.</p>
+                  <p className="text-center py-10 text-muted-foreground">
+                    No data found.
+                  </p>
                 ) : (
                   <div className="overflow-x-auto border rounded-md">
                     <Table>
@@ -406,7 +483,9 @@ export default function DataExplorer() {
                           <TableHead>Book Name</TableHead>
                           <TableHead>Type</TableHead>
                           <TableHead>Publisher</TableHead>
-                          <TableHead className="text-right">Final Price</TableHead>
+                          <TableHead className="text-right">
+                            Final Price
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
