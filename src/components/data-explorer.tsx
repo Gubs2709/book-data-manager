@@ -2,81 +2,99 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { useFirebase, useUser, useMemoFirebase } from '@/firebase';
-import { collection, getDocs, query, collectionGroup, where, Query, doc } from 'firebase/firestore';
-import type { Upload, Book, BookType, DenormalizedBook } from '@/lib/types';
+import { useFirebase, useUser } from '@/firebase';
+import { collectionGroup, getDocs, query, where } from 'firebase/firestore';
+import type { BookType, DenormalizedBook } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { format } from 'date-fns';
-
+import { FirestorePermissionError } from '@/firebase/errors';
+import { errorEmitter } from '@/firebase/error-emitter';
 
 export default function DataExplorer() {
   const { firestore } = useFirebase();
   const { user } = useUser();
 
   const [classFilter, setClassFilter] = useState<string>('all');
-  const [publisherFilter, setPublisherFilter] = useState<string>('');
+  const [publisherFilter, setPublisherFilter] = useState<string>('all');
   const [bookTypeFilter, setBookTypeFilter] = useState<BookType | 'all'>('all');
   const [allBooks, setAllBooks] = useState<DenormalizedBook[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   useEffect(() => {
     async function fetchAllBooks() {
-        if (!user || !firestore) {
-            setIsLoading(false);
-            return;
-        }
+      if (!user || !firestore) {
+        setIsLoading(false);
+        return;
+      }
 
-        setIsLoading(true);
-        const books: DenormalizedBook[] = [];
+      setIsLoading(true);
+      const books: DenormalizedBook[] = [];
 
-        try {
-            const textbooksQuery = query(
-                collectionGroup(firestore, 'textbooks'),
-                where('userId', '==', user.uid)
-            );
-            const notebooksQuery = query(
-                collectionGroup(firestore, 'notebooks'),
-                where('userId', '==', user.uid)
-            );
-            
-            const [textbookSnap, notebookSnap] = await Promise.all([
-                getDocs(textbooksQuery),
-                getDocs(notebooksQuery)
-            ]);
+      try {
+        const textbooksQuery = query(
+          collectionGroup(firestore, 'textbooks'),
+          where('userId', '==', user.uid)
+        );
+        const notebooksQuery = query(
+          collectionGroup(firestore, 'notebooks'),
+          where('userId', '==', user.uid)
+        );
 
-            textbookSnap.forEach(doc => {
-                const bookData = doc.data() as Omit<DenormalizedBook, 'type'>;
-                books.push({
-                    ...bookData,
-                    id: doc.id,
-                    type: 'Textbook'
-                });
-            });
-            
-            notebookSnap.forEach(doc => {
-                 const bookData = doc.data() as Omit<DenormalizedBook, 'type'>;
-                books.push({
-                    ...bookData,
-                    id: doc.id,
-                    type: 'Notebook'
-                });
-            });
-            
-            setAllBooks(books);
-        } catch (error) {
-            console.error("Error fetching all book data:", error);
-        } finally {
-            setIsLoading(false);
-        }
+        const textbookPromise = getDocs(textbooksQuery).catch(serverError => {
+          const permissionError = new FirestorePermissionError({
+            path: 'textbooks', // Path for a collection group query
+            operation: 'list',
+          });
+          errorEmitter.emit('permission-error', permissionError);
+          throw permissionError; // Re-throw to be caught by Promise.all
+        });
+
+        const notebookPromise = getDocs(notebooksQuery).catch(serverError => {
+          const permissionError = new FirestorePermissionError({
+            path: 'notebooks', // Path for a collection group query
+            operation: 'list',
+          });
+          errorEmitter.emit('permission-error', permissionError);
+          throw permissionError; // Re-throw to be caught by Promise.all
+        });
+
+        const [textbookSnap, notebookSnap] = await Promise.all([
+          textbookPromise,
+          notebookPromise,
+        ]);
+
+        textbookSnap.forEach(doc => {
+          const bookData = doc.data() as Omit<DenormalizedBook, 'type'>;
+          books.push({
+            ...bookData,
+            id: doc.id,
+            type: 'Textbook',
+          });
+        });
+
+        notebookSnap.forEach(doc => {
+          const bookData = doc.data() as Omit<DenormalizedBook, 'type'>;
+          books.push({
+            ...bookData,
+            id: doc.id,
+            type: 'Notebook',
+          });
+        });
+
+        setAllBooks(books);
+      } catch (error) {
+        // Errors are now handled by the .catch blocks and emitted.
+        // We can log a generic message here if needed, but the specific error is already handled.
+        console.log("An error occurred while fetching book data. The specific error has been emitted for debugging.");
+      } finally {
+        setIsLoading(false);
+      }
     }
 
     fetchAllBooks();
   }, [user, firestore]);
-
 
   const filteredBooks = useMemo(() => {
     return allBooks
@@ -85,12 +103,12 @@ export default function DataExplorer() {
         return book.class === classFilter;
       })
       .filter(book => {
-        if (!publisherFilter) return true;
+        if (publisherFilter === 'all') return true;
         return book.publisher.toLowerCase().includes(publisherFilter.toLowerCase());
       })
       .filter(book => {
-          if (bookTypeFilter === 'all') return true;
-          return book.type === bookTypeFilter;
+        if (bookTypeFilter === 'all') return true;
+        return book.type === bookTypeFilter;
       });
   }, [allBooks, classFilter, publisherFilter, bookTypeFilter]);
 
@@ -103,7 +121,7 @@ export default function DataExplorer() {
   const allClasses = useMemo(() => {
     if (!allBooks) return [];
     const classes = allBooks.map(u => u.class);
-    return [...new Set(classes)].filter(Boolean).sort((a,b) => parseInt(a) - parseInt(b));
+    return [...new Set(classes)].filter(Boolean).sort((a, b) => parseInt(a) - parseInt(b));
   }, [allBooks]);
 
   const formatCurrency = (value: number) => {
@@ -112,7 +130,7 @@ export default function DataExplorer() {
       currency: "INR",
     }).format(value);
   };
-  
+
   return (
     <main className="container flex-grow py-8">
       <Card className="shadow-lg">
@@ -139,14 +157,14 @@ export default function DataExplorer() {
               </SelectContent>
             </Select>
             <Select onValueChange={(value) => setBookTypeFilter(value as BookType | 'all')} defaultValue="all">
-                <SelectTrigger>
-                    <SelectValue placeholder="Filter by Type" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="Textbook">Textbooks</SelectItem>
-                    <SelectItem value="Notebook">Notebooks</SelectItem>
-                </SelectContent>
+              <SelectTrigger>
+                <SelectValue placeholder="Filter by Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="Textbook">Textbooks</SelectItem>
+                <SelectItem value="Notebook">Notebooks</SelectItem>
+              </SelectContent>
             </Select>
           </div>
         </CardHeader>
@@ -181,7 +199,7 @@ export default function DataExplorer() {
                       <TableCell className="font-medium">{book.bookName}</TableCell>
                       <TableCell>
                         <Badge variant={book.type === 'Textbook' ? 'default' : 'secondary'}>
-                            {book.type}
+                          {book.type}
                         </Badge>
                       </TableCell>
                       <TableCell>{book.publisher}</TableCell>
@@ -206,3 +224,4 @@ export default function DataExplorer() {
     </main>
   );
 }
+    
