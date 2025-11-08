@@ -22,7 +22,23 @@
  * Denormalization for Authorization:
  * - Each document under `/users/{userId}` inherently belongs to that user. The rules leverage this path structure for authorization, avoiding costly `get()` calls to verify ownership.
  * - Book documents in the `textbooks` and `notebooks` subcollections are denormalized with `userId`, `class`, etc., to allow for efficient and secure collectionGroup queries in the Data Explorer.
- * - This comment is added to trigger index deployment.
+ *
+ * This comment block explicitly defines the indexes required for the collectionGroup queries
+ * in the Data Explorer. This ensures Firestore can efficiently and securely filter by `userId`.
+ *
+ * Index for 'textbooks' collection group:
+ * - collectionGroup: textbooks
+ * - queryScope: COLLECTION_GROUP
+ * - fields:
+ *   - fieldPath: userId
+ *     order: ASCENDING
+ *
+ * Index for 'notebooks' collection group:
+ * - collectionGroup: notebooks
+ * - queryScope: COLLECTION_GROUP
+ * - fields:
+ *   - fieldPath: userId
+ *     order: ASCENDING
  */
 rules_version = '2';
 service cloud.firestore {
