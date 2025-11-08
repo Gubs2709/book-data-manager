@@ -24,23 +24,28 @@ export default function DataExplorer() {
 
   useEffect(() => {
     async function fetchAllBooks() {
-      if (!user || !firestore) {
+      // **CRITICAL FIX**: Only fetch data if a non-anonymous user is authenticated.
+      if (!user || user.isAnonymous || !firestore) {
         setIsLoading(false);
+        setAllBooks([]); // Clear any previous data
         return;
       }
 
       setIsLoading(true);
       try {
         const books: DenormalizedBook[] = [];
+
+        const textbookQuery = query(collectionGroup(firestore, 'textbooks'), where('userId', '==', user.uid));
+        const notebookQuery = query(collectionGroup(firestore, 'notebooks'), where('userId', '==', user.uid));
         
-        const textbookPromise = getDocs(query(collectionGroup(firestore, 'textbooks'), where('userId', '==', user.uid))).catch(err => {
+        const textbookPromise = getDocs(textbookQuery).catch(err => {
           errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: 'textbooks', operation: 'list'
           }));
           return { docs: [] }; // Return empty result on error
         });
   
-        const notebookPromise = getDocs(query(collectionGroup(firestore, 'notebooks'), where('userId', '==', user.uid))).catch(err => {
+        const notebookPromise = getDocs(notebookQuery).catch(err => {
           errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: 'notebooks', operation: 'list'
           }));
@@ -58,6 +63,7 @@ export default function DataExplorer() {
             ...bookData,
             id: doc.id,
             type: 'Textbook',
+            userId: user.uid
           });
         });
 
@@ -67,17 +73,19 @@ export default function DataExplorer() {
             ...bookData,
             id: doc.id,
             type: 'Notebook',
+            userId: user.uid
           });
         });
 
         setAllBooks(books);
       } catch (error) {
-        console.log("An error occurred while fetching book data.");
+        console.error("An error occurred while fetching book data:", error);
       } finally {
         setIsLoading(false);
       }
     }
     
+    // Run fetchAllBooks only when user status is definitively known and not loading.
     if (!isUserLoading) {
         fetchAllBooks();
     }
@@ -181,10 +189,10 @@ export default function DataExplorer() {
                       <TableCell colSpan={9} className="h-12 text-center">Loading...</TableCell>
                     </TableRow>
                   ))
-                ) : !user ? (
+                ) : !user || user.isAnonymous ? (
                    <TableRow>
                     <TableCell colSpan={9} className="h-24 text-center">
-                      Please sign in to view your data.
+                      Please sign in with Google to view your data.
                     </TableCell>
                   </TableRow>
                 ) : filteredBooks.length > 0 ? (
