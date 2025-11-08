@@ -22,6 +22,7 @@
  * Denormalization for Authorization:
  * - Each document under `/users/{userId}` inherently belongs to that user. The rules leverage this path structure for authorization, avoiding costly `get()` calls to verify ownership.
  * - Book documents in the `textbooks` and `notebooks` subcollections are denormalized with `userId`, `class`, etc., to allow for efficient and secure collectionGroup queries in the Data Explorer.
+ * - This comment is added to trigger index deployment.
  */
 rules_version = '2';
 service cloud.firestore {
@@ -94,21 +95,23 @@ service cloud.firestore {
     }
     
     /**
-     * @description Rule for the 'textbooks' collection group.
+     * @description Rule for the 'textbooks' collection group. This rule ensures that a user can only list their own textbooks.
+     * The client query MUST use a `where("userId", "==", request.auth.uid)` clause.
      * @path /{path=**}/textbooks/{textbookId}
      * @principle Allows a user to list only their own textbooks across all uploads, secured by a 'userId' field check.
      */
     match /{path=**}/textbooks/{textbookId} {
-      allow list: if isSignedIn(); // List is secured by 'where' clause in the client query.
+      allow list: if isSignedIn() && request.query.where.userId == request.auth.uid;
     }
 
     /**
-     * @description Rule for the 'notebooks' collection group.
+     * @description Rule for the 'notebooks' collection group. This rule ensures that a user can only list their own notebooks.
+     * The client query MUST use a `where("userId", "==", request.auth.uid)` clause.
      * @path /{path=**}/notebooks/{notebookId}
      * @principle Allows a user to list only their own notebooks across all uploads, secured by a 'userId' field check.
      */
      match /{path=**}/notebooks/{notebookId} {
-      allow list: if isSignedIn(); // List is secured by 'where' clause in the client query.
+      allow list: if isSignedIn() && request.query.where.userId == request.auth.uid;
     }
 
     /**
