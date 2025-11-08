@@ -43,6 +43,10 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
 } from "recharts";
 
 interface BookData {
@@ -75,6 +79,16 @@ function sanitizeChartData(data: Record<string, any>[]): Record<string, any>[] {
     }))
     .filter((item) => typeof item.value === "number" && isFinite(item.value));
 }
+
+const COLORS = [
+  "#0088FE",
+  "#00C49F",
+  "#FFBB28",
+  "#FF8042",
+  "#8884d8",
+  "#ff7300",
+  "#34d399",
+];
 
 export default function DataExplorer() {
   const { firestore } = useFirebase();
@@ -173,7 +187,7 @@ export default function DataExplorer() {
       return acc;
     }, {} as Record<string, number>);
   
-    return sanitizeChartData(Object.entries(grouped).map(([name, value]) => ({ name, value })));
+    return sanitizeChartData(Object.entries(grouped).map(([name, value]) => ({ name: `Class ${name}`, value })));
   }, [filteredBooks]);
   
   const publisherChartData = useMemo(() => {
@@ -345,7 +359,7 @@ export default function DataExplorer() {
                     <BarChart data={classChartData}>
                       <XAxis dataKey="name" stroke="#888888" fontSize={12} tickLine={false} axisLine={false}/>
                       <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `₹${value}`}/>
-                      <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                      <Tooltip formatter={(value: number) => formatCurrency(value)} cursor={{ fill: "hsl(var(--muted))" }} />
                       <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -357,12 +371,25 @@ export default function DataExplorer() {
                 <CardHeader><CardTitle>Cost by Publisher</CardTitle></CardHeader>
                 <CardContent className="h-[320px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={publisherChartData}>
-                      <XAxis dataKey="name" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} interval={0} angle={-25} textAnchor="end" height={80}/>
-                      <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `₹${value}`}/>
+                    <PieChart>
+                      <Pie
+                        data={publisherChartData}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        outerRadius={100}
+                        fill="#8884d8"
+                        dataKey="value"
+                        nameKey="name"
+                        label={(props) => `${props.name} (${(props.percent * 100).toFixed(0)}%)`}
+                      >
+                        {publisherChartData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
                       <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                      <Bar dataKey="value" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} />
-                    </BarChart>
+                      <Legend />
+                    </PieChart>
                   </ResponsiveContainer>
                 </CardContent>
               </Card>
