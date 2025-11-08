@@ -1,3 +1,9 @@
+import CalculatorDashboard from '@/components/calculator-dashboard';
+
 export default function Home() {
-  return <></>;
+  return (
+    <div className="flex min-h-screen flex-col bg-background text-foreground">
+      <CalculatorDashboard />
+    </div>
+  );
 }
