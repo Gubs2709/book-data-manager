@@ -104,7 +104,7 @@ export default function DataExplorer() {
       })
       .filter(book => {
         if (publisherFilter === 'all') return true;
-        return book.publisher.toLowerCase().includes(publisherFilter.toLowerCase());
+        return book.publisher === publisherFilter;
       })
       .filter(book => {
         if (bookTypeFilter === 'all') return true;
@@ -147,7 +147,7 @@ export default function DataExplorer() {
                 {allClasses.map(c => <SelectItem key={c} value={c}>Class {c}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Select onValueChange={(value) => setPublisherFilter(value === 'all' ? '' : value)} defaultValue="">
+            <Select onValueChange={setPublisherFilter} defaultValue="all">
               <SelectTrigger>
                 <SelectValue placeholder="Filter by Publisher" />
               </SelectTrigger>
