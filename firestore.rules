@@ -3,18 +3,9 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Allow users to manage their own data within their user-specific collections.
-    match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
 
-    // Allow authenticated users to query collection groups if they filter by their own user ID.
-    match /{path=**}/textbooks/{textbookId} {
-      allow read, write: if request.auth != null;
-    }
-
-    match /{path=**}/notebooks/{notebookId} {
+    // allow all authenticated users
+    match /{document=**} {
       allow read, write: if request.auth != null;
     }
   }
