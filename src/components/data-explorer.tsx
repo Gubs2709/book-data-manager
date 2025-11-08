@@ -160,25 +160,31 @@ export default function DataExplorer() {
 
   // 🧮 Chart data (safe aggregation)
   const classChartData = useMemo(() => {
-    const grouped: Record<string, number> = {};
-    filteredBooks.forEach((b) => {
-      const key = b.class || "Unknown";
-      grouped[key] = (grouped[key] || 0) + safeNumber(b.finalPrice);
-    });
-    return sanitizeChartData(
-      Object.entries(grouped).map(([name, value]) => ({ name, value }))
-    );
+    const grouped = filteredBooks.reduce((acc, book) => {
+      const key = book.class || 'Unknown';
+      const value = safeNumber(book.finalPrice);
+      if (!acc[key]) {
+        acc[key] = 0;
+      }
+      acc[key] += value;
+      return acc;
+    }, {} as Record<string, number>);
+  
+    return Object.entries(grouped).map(([name, value]) => ({ name, value }));
   }, [filteredBooks]);
-
+  
   const publisherChartData = useMemo(() => {
-    const grouped: Record<string, number> = {};
-    filteredBooks.forEach((b) => {
-      const key = b.publisher || "Unknown";
-      grouped[key] = (grouped[key] || 0) + safeNumber(b.finalPrice);
-    });
-    return sanitizeChartData(
-      Object.entries(grouped).map(([name, value]) => ({ name, value }))
-    );
+    const grouped = filteredBooks.reduce((acc, book) => {
+      const key = book.publisher || 'Unknown';
+      const value = safeNumber(book.finalPrice);
+      if (!acc[key]) {
+        acc[key] = 0;
+      }
+      acc[key] += value;
+      return acc;
+    }, {} as Record<string, number>);
+  
+    return Object.entries(grouped).map(([name, value]) => ({ name, value }));
   }, [filteredBooks]);
 
   // 🎚 Filter options
