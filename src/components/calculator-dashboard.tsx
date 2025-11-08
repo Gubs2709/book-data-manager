@@ -24,13 +24,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calculator, Download, FileUp, Undo2, BookOpen, GraduationCap, Save, Tags } from "lucide-react";
+import { Calculator, Download, FileUp, Undo2, BookOpen, GraduationCap, Save, Tags, Edit } from "lucide-react";
 import { Separator } from "./ui/separator";
 import * as XLSX from 'xlsx';
 import { useToast } from "@/hooks/use-toast";
 import { useFirebase, useUser, useCollection, useMemoFirebase } from "@/firebase";
 import { collection, doc, writeBatch } from "firebase/firestore";
 import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates";
+import { Textarea } from "./ui/textarea";
 
 const createBookId = (book: Partial<Book>, type: BookType): string => {
   let id = `${book.bookName}-${book.publisher}-${type}`;
@@ -70,6 +71,12 @@ export default function CalculatorDashboard() {
   // Filter state
   const [textbookFilters, setTextbookFilters] = useState<BookFilters>(initialFilters);
   const [notebookFilters, setNotebookFilters] = useState<BookFilters>(initialFilters);
+  
+  // Bulk edit state
+  const [bulkBookNames, setBulkBookNames] = useState("");
+  const [bulkPrice, setBulkPrice] = useState<string>("");
+  const [bulkDiscount, setBulkDiscount] = useState<string>("");
+  const [bulkTax, setBulkTax] = useState<string>("");
 
 
   const frequentBookDataQuery = useMemoFirebase(() => 
@@ -316,6 +323,54 @@ export default function CalculatorDashboard() {
 
     toast({ title: "Success", description: `Applied ${publisherDiscount}% discount to all books by ${selectedPublisher}.` });
   };
+  
+  const handleBulkUpdate = () => {
+    const bookNamesToUpdate = bulkBookNames.split('\n').filter(name => name.trim() !== "").map(name => name.trim().toLowerCase());
+    if (bookNamesToUpdate.length === 0) {
+      toast({ variant: "destructive", title: "Error", description: "Please enter at least one book name." });
+      return;
+    }
+
+    const newPrice = bulkPrice !== "" ? parseFloat(bulkPrice) : null;
+    const newDiscount = bulkDiscount !== "" ? parseFloat(bulkDiscount) : null;
+    const newTax = bulkTax !== "" ? parseFloat(bulkTax) : null;
+
+    if (newPrice === null && newDiscount === null && newTax === null) {
+      toast({ variant: "destructive", title: "Error", description: "Please enter a value for price, discount, or tax to apply." });
+      return;
+    }
+
+    let booksUpdatedCount = 0;
+
+    const updateBookList = (books: Book[], type: BookType): Book[] => {
+      return books.map(book => {
+        if (bookNamesToUpdate.includes(book.bookName.trim().toLowerCase())) {
+          let updatedBook = { ...book };
+          if (newPrice !== null && !isNaN(newPrice)) updatedBook.price = newPrice;
+          if (newDiscount !== null && !isNaN(newDiscount)) updatedBook.discount = newDiscount;
+          if (newTax !== null && !isNaN(newTax)) updatedBook.tax = newTax;
+          
+          saveFrequentBookData(updatedBook, type);
+          booksUpdatedCount++;
+          return { ...updatedBook, finalPrice: calculateFinalPrice(updatedBook) };
+        }
+        return book;
+      });
+    };
+    
+    setTextbooks(prev => updateBookList(prev, 'Textbook'));
+    setNotebooks(prev => updateBookList(prev, 'Notebook'));
+
+    if (booksUpdatedCount > 0) {
+      toast({ title: "Success", description: `Updated ${booksUpdatedCount} book(s).` });
+      setBulkBookNames("");
+      setBulkPrice("");
+      setBulkDiscount("");
+      setBulkTax("");
+    } else {
+      toast({ variant: "destructive", title: "No books found", description: "No books matched the names provided." });
+    }
+  };
 
 
   const handleDownload = () => {
@@ -503,40 +558,80 @@ export default function CalculatorDashboard() {
                 </CardContent>
             </Card>
 
-            <Card className="shadow-md">
-              <CardHeader>
-                <CardTitle className="text-xl flex items-center gap-2">
-                  <Tags className="h-5 w-5 text-primary"/>
-                  Publisher-Specific Discount
-                </CardTitle>
-                <CardDescription>Apply a discount to all books from a single publisher.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col sm:flex-row items-center gap-4">
-                    <Select onValueChange={setSelectedPublisher} value={selectedPublisher || ''}>
-                        <SelectTrigger className="w-full sm:w-[250px]">
-                            <SelectValue placeholder="Select Publisher" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {uniquePublishers.map((pub) => (
-                                <SelectItem key={pub} value={pub}>{pub}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                    <Input
-                        type="number"
-                        placeholder="Discount %"
-                        className="w-full sm:w-[150px]"
-                        value={publisherDiscount}
-                        onChange={(e) => setPublisherDiscount(parseFloat(e.target.value) || 0)}
-                        aria-label="Publisher Discount"
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+              <Card className="shadow-md">
+                <CardHeader>
+                  <CardTitle className="text-xl flex items-center gap-2">
+                    <Tags className="h-5 w-5 text-primary"/>
+                    Publisher-Specific Discount
+                  </CardTitle>
+                  <CardDescription>Apply a discount to all books from a single publisher.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-col sm:flex-row items-center gap-4">
+                      <Select onValueChange={setSelectedPublisher} value={selectedPublisher || ''}>
+                          <SelectTrigger className="w-full sm:w-[250px]">
+                              <SelectValue placeholder="Select Publisher" />
+                          </SelectTrigger>
+                          <SelectContent>
+                              {uniquePublishers.map((pub) => (
+                                  <SelectItem key={pub} value={pub}>{pub}</SelectItem>
+                              ))}
+                          </SelectContent>
+                      </Select>
+                      <Input
+                          type="number"
+                          placeholder="Discount %"
+                          className="w-full sm:w-[150px]"
+                          value={publisherDiscount}
+                          onChange={(e) => setPublisherDiscount(parseFloat(e.target.value) || 0)}
+                          aria-label="Publisher Discount"
+                      />
+                      <Button onClick={handleApplyPublisherDiscount} className="w-full sm:w-auto">
+                          Apply Discount
+                      </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-md">
+                <CardHeader>
+                  <CardTitle className="text-xl flex items-center gap-2">
+                    <Edit className="h-5 w-5 text-primary"/>
+                    Bulk Book Editor
+                  </CardTitle>
+                  <CardDescription>Apply changes to multiple books by name.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="bulk-book-names">Book Names (one per line)</Label>
+                    <Textarea 
+                      id="bulk-book-names"
+                      placeholder="Enter book names here..."
+                      value={bulkBookNames}
+                      onChange={(e) => setBulkBookNames(e.target.value)}
                     />
-                    <Button onClick={handleApplyPublisherDiscount} className="w-full sm:w-auto">
-                        Apply Discount
-                    </Button>
-                </div>
-              </CardContent>
-            </Card>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                          <Label htmlFor="bulk-price">New Price</Label>
+                          <Input id="bulk-price" type="number" placeholder="e.g., 150" value={bulkPrice} onChange={e => setBulkPrice(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                          <Label htmlFor="bulk-discount">New Discount (%)</Label>
+                          <Input id="bulk-discount" type="number" placeholder="e.g., 15" value={bulkDiscount} onChange={e => setBulkDiscount(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                          <Label htmlFor="bulk-tax">New Tax (%)</Label>
+                          <Input id="bulk-tax" type="number" placeholder="e.g., 5" value={bulkTax} onChange={e => setBulkTax(e.target.value)} />
+                      </div>
+                  </div>
+                  <Button onClick={handleBulkUpdate} className="w-full sm:w-auto">
+                      Apply Bulk Changes
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
 
              <div className="space-y-8">
                <BookTable
@@ -607,5 +702,3 @@ export default function CalculatorDashboard() {
     </>
   );
 }
-
-    
