@@ -116,9 +116,11 @@ export default function CalculatorDashboard() {
   }, [textbooks, notebooks]);
 
   const uniquePublishers = useMemo(() => {
-    const allPublishers = [...textbooks, ...notebooks].map(book => book.publisher);
+    const currentPublishers = [...textbooks, ...notebooks].map(book => book.publisher);
+    const frequentPublishers = frequentBookData?.map(item => item.publisher) || [];
+    const allPublishers = [...currentPublishers, ...frequentPublishers];
     return [...new Set(allPublishers)].filter(Boolean).sort();
-  }, [textbooks, notebooks]);
+  }, [textbooks, notebooks, frequentBookData]);
 
   const handleProcessMockData = () => {
     const applyInitialValues = (mockData: Book[], discount: number, tax: number) =>
