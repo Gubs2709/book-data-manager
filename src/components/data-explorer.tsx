@@ -3,7 +3,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useFirebase, useUser } from '@/firebase';
-import { collectionGroup, getDocs, query, where } from 'firebase/firestore';
+import { collectionGroup, getDocs, query, where, DocumentData } from 'firebase/firestore';
 import type { BookType, DenormalizedBook } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -14,7 +14,7 @@ import { errorEmitter } from '@/firebase/error-emitter';
 
 export default function DataExplorer() {
   const { firestore } = useFirebase();
-  const { user } = useUser();
+  const { user, isUserLoading } = useUser();
 
   const [classFilter, setClassFilter] = useState<string>('all');
   const [publisherFilter, setPublisherFilter] = useState<string>('all');
@@ -30,42 +30,29 @@ export default function DataExplorer() {
       }
 
       setIsLoading(true);
-      const books: DenormalizedBook[] = [];
-
       try {
-        const textbooksQuery = query(
-          collectionGroup(firestore, 'textbooks'),
-          where('userId', '==', user.uid)
-        );
-        const notebooksQuery = query(
-          collectionGroup(firestore, 'notebooks'),
-          where('userId', '==', user.uid)
-        );
-
-        const textbookPromise = getDocs(textbooksQuery).catch(serverError => {
-          const permissionError = new FirestorePermissionError({
-            path: 'textbooks', // Path for a collection group query
-            operation: 'list',
-          });
-          errorEmitter.emit('permission-error', permissionError);
-          throw permissionError; // Re-throw to be caught by Promise.all
+        const books: DenormalizedBook[] = [];
+        
+        const textbookPromise = getDocs(query(collectionGroup(firestore, 'textbooks'), where('userId', '==', user.uid))).catch(err => {
+          errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: 'textbooks', operation: 'list'
+          }));
+          return { docs: [] }; // Return empty result on error
         });
-
-        const notebookPromise = getDocs(notebooksQuery).catch(serverError => {
-          const permissionError = new FirestorePermissionError({
-            path: 'notebooks', // Path for a collection group query
-            operation: 'list',
-          });
-          errorEmitter.emit('permission-error', permissionError);
-          throw permissionError; // Re-throw to be caught by Promise.all
+  
+        const notebookPromise = getDocs(query(collectionGroup(firestore, 'notebooks'), where('userId', '==', user.uid))).catch(err => {
+          errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: 'notebooks', operation: 'list'
+          }));
+          return { docs: [] }; // Return empty result on error
         });
-
+        
         const [textbookSnap, notebookSnap] = await Promise.all([
           textbookPromise,
           notebookPromise,
         ]);
 
-        textbookSnap.forEach(doc => {
+        textbookSnap.docs.forEach(doc => {
           const bookData = doc.data() as Omit<DenormalizedBook, 'type'>;
           books.push({
             ...bookData,
@@ -74,7 +61,7 @@ export default function DataExplorer() {
           });
         });
 
-        notebookSnap.forEach(doc => {
+        notebookSnap.docs.forEach(doc => {
           const bookData = doc.data() as Omit<DenormalizedBook, 'type'>;
           books.push({
             ...bookData,
@@ -85,16 +72,17 @@ export default function DataExplorer() {
 
         setAllBooks(books);
       } catch (error) {
-        // Errors are now handled by the .catch blocks and emitted.
-        // We can log a generic message here if needed, but the specific error is already handled.
-        console.log("An error occurred while fetching book data. The specific error has been emitted for debugging.");
+        console.log("An error occurred while fetching book data.");
       } finally {
         setIsLoading(false);
       }
     }
+    
+    if (!isUserLoading) {
+        fetchAllBooks();
+    }
 
-    fetchAllBooks();
-  }, [user, firestore]);
+  }, [user, isUserLoading, firestore]);
 
   const filteredBooks = useMemo(() => {
     return allBooks
@@ -130,6 +118,8 @@ export default function DataExplorer() {
       currency: "INR",
     }).format(value);
   };
+  
+  const showLoadingState = isLoading || isUserLoading;
 
   return (
     <main className="container flex-grow py-8">
@@ -185,12 +175,18 @@ export default function DataExplorer() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading ? (
+                {showLoadingState ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
                       <TableCell colSpan={9} className="h-12 text-center">Loading...</TableCell>
                     </TableRow>
                   ))
+                ) : !user ? (
+                   <TableRow>
+                    <TableCell colSpan={9} className="h-24 text-center">
+                      Please sign in to view your data.
+                    </TableCell>
+                  </TableRow>
                 ) : filteredBooks.length > 0 ? (
                   filteredBooks.map((book) => (
                     <TableRow key={book.id}>
