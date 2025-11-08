@@ -44,3 +44,11 @@ export interface BookFilters {
     subject: string;
     publisher: string;
 }
+
+export type DenormalizedBook = Book & {
+    class: string;
+    courseCombination: string;
+    uploadTimestamp: Timestamp | any;
+    type: BookType;
+    userId: string;
+}

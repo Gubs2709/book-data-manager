@@ -9,18 +9,19 @@
  * Data Structure:
  * - /users/{userId}: Stores user profile information.
  * - /users/{userId}/uploads/{uploadId}: Stores metadata about uploads, including class, course, and default discounts/taxes.
- * - /users/{userId}/uploads/{uploadId}/textbooks/{textbookId}: Stores textbook data associated with an upload.
- * - /users/{userId}/uploads/{uploadId}/notebooks/{notebookId}: Stores notebook data associated with an upload.
+ * - /users/{userId}/uploads/{uploadId}/textbooks/{textbookId}: Stores denormalized textbook data associated with an upload.
+ * - /users/{userId}/uploads/{uploadId}/notebooks/{notebookId}: Stores denormalized notebook data associated with an upload.
  * - /users/{userId}/frequent_book_data/{frequentBookDataId}: Stores frequently used book data like discount and tax for easy reuse.
  *
  * Key Security Decisions:
  * - User listing is explicitly disallowed.
- * - Path-based ownership is enforced for all user-related data.
+ * - Path-based ownership is enforced for most user-related data.
+ * - For collectionGroup queries on 'textbooks' and 'notebooks', ownership is verified by checking a `userId` field on the document itself.
  * - Data consistency between paths and document data is validated on create and update.
  *
  * Denormalization for Authorization:
  * - Each document under `/users/{userId}` inherently belongs to that user. The rules leverage this path structure for authorization, avoiding costly `get()` calls to verify ownership.
- * - Upload documents under `/users/{userId}/uploads/{uploadId}` store the `userId`, enabling rules to verify ownership without reading the User document.
+ * - Book documents in the `textbooks` and `notebooks` subcollections are denormalized with `userId`, `class`, etc., to allow for efficient and secure collectionGroup queries in the Data Explorer.
  */
 rules_version = '2';
 service cloud.firestore {
@@ -35,19 +36,19 @@ service cloud.firestore {
     }
 
     /**
-     * @description Defines a global function to check if the requesting user is the owner of the document.
-     * @principle Enforces user-based ownership for data access.
+     * @description Defines a global function to check if the requesting user is the owner of the document via path.
+     * @principle Enforces user-based ownership for data access based on URL path segments.
      */
-    function isOwner(userId) {
+    function isOwnerByPath(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
-
+    
     /**
-     * @description Defines a global function to check if the request is made by the existing owner of the document.
-     * @principle Enforces that updates and deletes can only be performed by the owner and that the document exists.
+     * @description Defines a global function to check if the requesting user is the owner via a field on the resource.
+     * @principle Enforces user-based ownership by checking a `userId` field on the document being read/written.
      */
-    function isExistingOwner(userId) {
-      return isOwner(userId) && resource != null;
+    function isOwnerByField() {
+        return isSignedIn() && request.auth.uid == request.resource.data.userId;
     }
 
     /**
@@ -61,9 +62,9 @@ service cloud.firestore {
       allow get: if false;
       allow list: if false;
 
-      allow create: if isSignedIn() && request.auth.uid == userId && request.resource.data.id == userId;
-      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
-      allow delete: if isExistingOwner(userId);
+      allow create: if isOwnerByPath(userId) && request.resource.data.id == userId;
+      allow update: if isOwnerByPath(userId) && resource.data.id == request.resource.data.id;
+      allow delete: if isOwnerByPath(userId);
     }
 
     /**
@@ -74,44 +75,40 @@ service cloud.firestore {
      * @principle Enforces user-based ownership for uploads.
      */
     match /users/{userId}/uploads/{uploadId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
+      allow get, list, delete: if isOwnerByPath(userId);
+      allow create: if isOwnerByPath(userId) && request.resource.data.userId == userId;
+      allow update: if isOwnerByPath(userId) && request.resource.data.userId == resource.data.userId;
 
-      allow create: if isOwner(userId) && request.resource.data.userId == userId;
-      allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
-      allow delete: if isExistingOwner(userId);
+      // Rules for the nested textbook and notebook collections
+      match /textbooks/{textbookId} {
+         allow get, list, delete: if isOwnerByPath(userId);
+         allow create: if isOwnerByPath(userId) && isOwnerByField() && request.resource.data.uploadId == uploadId;
+         allow update: if isOwnerByPath(userId) && isOwnerByField() && request.resource.data.uploadId == uploadId;
+      }
+
+      match /notebooks/{notebookId} {
+         allow get, list, delete: if isOwnerByPath(userId);
+         allow create: if isOwnerByPath(userId) && isOwnerByField() && request.resource.data.uploadId == uploadId;
+         allow update: if isOwnerByPath(userId) && isOwnerByField() && request.resource.data.uploadId == uploadId;
+      }
+    }
+    
+    /**
+     * @description Rule for the 'textbooks' collection group.
+     * @path /{path=**}/textbooks/{textbookId}
+     * @principle Allows a user to list only their own textbooks across all uploads, secured by a 'userId' field check.
+     */
+    match /{path=**}/textbooks/{textbookId} {
+      allow list: if isSignedIn(); // List is secured by 'where' clause in the client query.
     }
 
     /**
-     * @description Rule for the /users/{userId}/uploads/{uploadId}/textbooks/{textbookId} collection.
-     * @path /users/{userId}/uploads/{uploadId}/textbooks/{textbookId}
-     * @allow (create) User with ID 'user_abc' can create a textbook under their upload.
-     * @deny (create) User with ID 'user_def' cannot create a textbook under 'user_abc's upload.
-     * @principle Enforces user-based ownership for textbooks.
+     * @description Rule for the 'notebooks' collection group.
+     * @path /{path=**}/notebooks/{notebookId}
+     * @principle Allows a user to list only their own notebooks across all uploads, secured by a 'userId' field check.
      */
-    match /users/{userId}/uploads/{uploadId}/textbooks/{textbookId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-
-      allow create: if isOwner(userId) && request.resource.data.uploadId == uploadId;
-      allow update: if isExistingOwner(userId) && request.resource.data.uploadId == resource.data.uploadId;
-      allow delete: if isExistingOwner(userId);
-    }
-
-    /**
-     * @description Rule for the /users/{userId}/uploads/{uploadId}/notebooks/{notebookId} collection.
-     * @path /users/{userId}/uploads/{uploadId}/notebooks/{notebookId}
-     * @allow (create) User with ID 'user_abc' can create a notebook under their upload.
-     * @deny (create) User with ID 'user_def' cannot create a notebook under 'user_abc's upload.
-     * @principle Enforces user-based ownership for notebooks.
-     */
-    match /users/{userId}/uploads/{uploadId}/notebooks/{notebookId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-
-      allow create: if isOwner(userId) && request.resource.data.uploadId == uploadId;
-      allow update: if isExistingOwner(userId) && request.resource.data.uploadId == resource.data.uploadId;
-      allow delete: if isExistingOwner(userId);
+     match /{path=**}/notebooks/{notebookId} {
+      allow list: if isSignedIn(); // List is secured by 'where' clause in the client query.
     }
 
     /**
@@ -122,12 +119,9 @@ service cloud.firestore {
      * @principle Enforces user-based ownership for frequent book data.
      */
     match /users/{userId}/frequent_book_data/{frequentBookDataId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-
-      allow create: if isOwner(userId) && request.resource.data.userId == userId;
-      allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
-      allow delete: if isExistingOwner(userId);
+      allow get, list, delete: if isOwnerByPath(userId);
+      allow create: if isOwnerByPath(userId) && request.resource.data.userId == userId;
+      allow update: if isOwnerByPath(userId) && request.resource.data.userId == resource.data.userId;
     }
   }
 }

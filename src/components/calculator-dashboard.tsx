@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect } from "react";
-import type { Book, FrequentBookData, BookType, BookFilters, Upload } from "@/lib/types";
+import type { Book, FrequentBookData, BookType, BookFilters, Upload, DenormalizedBook } from "@/lib/types";
 import { TEXTBOOKS_MOCK, NOTEBOOKS_MOCK } from "@/lib/data";
 import { BookTable } from "./book-table";
 import {
@@ -487,16 +487,17 @@ export default function CalculatorDashboard() {
     }
   
     const batch = writeBatch(firestore);
+    const timestamp = serverTimestamp();
   
     // Save all books from the current session to the frequent_book_data collection
     const allBooks = [...textbooks, ...notebooks];
-    const processedBooks = new Set<string>();
+    const processedFrequentBooks = new Set<string>();
   
     allBooks.forEach(book => {
       const bookType = 'uploadId' in book && textbooks.some(tb => tb.id === book.id) ? 'Textbook' : 'Notebook';
       const docId = createBookId(book, bookType);
       
-      if (docId && !processedBooks.has(docId)) {
+      if (docId && !processedFrequentBooks.has(docId)) {
         const frequentDocRef = doc(firestore, 'users', user.uid, 'frequent_book_data', docId);
         const dataToSave: Omit<FrequentBookData, 'id'> = {
             userId: user.uid,
@@ -509,20 +510,34 @@ export default function CalculatorDashboard() {
             ...(bookType === 'Notebook' && { pages: book.pages }),
         };
         batch.set(frequentDocRef, dataToSave, { merge: true });
-        processedBooks.add(docId);
+        processedFrequentBooks.add(docId);
       }
     });
 
-    // Save the individual books under the current upload
+    // Save the individual books under the current upload with denormalized data
     textbooks.forEach(book => {
       const bookDocRef = doc(collection(firestore, 'users', user.uid, 'uploads', currentUploadId, 'textbooks'));
-      const textbookData = { ...book, uploadId: currentUploadId, id: bookDocRef.id };
+      const textbookData: DenormalizedBook = { 
+        ...book, 
+        id: bookDocRef.id,
+        uploadId: currentUploadId,
+        class: className,
+        courseCombination: course,
+        uploadTimestamp: timestamp
+      };
       batch.set(bookDocRef, textbookData);
     });
 
     notebooks.forEach(book => {
       const bookDocRef = doc(collection(firestore, 'users', user.uid, 'uploads', currentUploadId, 'notebooks'));
-      const notebookData = { ...book, uploadId: currentUploadId, id: bookDocRef.id };
+      const notebookData: DenormalizedBook = { 
+        ...book, 
+        id: bookDocRef.id,
+        uploadId: currentUploadId,
+        class: className,
+        courseCombination: course,
+        uploadTimestamp: timestamp
+       };
       batch.set(bookDocRef, notebookData);
     });
   

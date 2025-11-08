@@ -4,7 +4,7 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Textbook",
       "type": "object",
-      "description": "Represents a textbook with its details, including pricing, discounts, and taxes.",
+      "description": "Represents a textbook with its details, including pricing, discounts, and taxes. This is a denormalized entity.",
       "properties": {
         "id": {
           "type": "string",
@@ -12,7 +12,11 @@
         },
         "uploadId": {
           "type": "string",
-          "description": "Reference to the Upload entity. (Relationship: Upload 1:N Textbook)"
+          "description": "Reference to the Upload entity."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The ID of the user who uploaded the book."
         },
         "bookName": {
           "type": "string",
@@ -41,25 +45,42 @@
         "finalPrice": {
           "type": "number",
           "description": "The final calculated price of the textbook after applying discounts and taxes."
+        },
+        "class": {
+          "type": "string",
+          "description": "The class associated with the upload."
+        },
+        "courseCombination": {
+          "type": "string",
+          "description": "The course combination associated with the upload."
+        },
+        "uploadTimestamp": {
+          "type": "string",
+          "description": "The timestamp of when the upload occurred.",
+          "format": "date-time"
         }
       },
       "required": [
         "id",
         "uploadId",
+        "userId",
         "bookName",
         "subject",
         "publisher",
         "price",
         "discount",
         "tax",
-        "finalPrice"
+        "finalPrice",
+        "class",
+        "courseCombination",
+        "uploadTimestamp"
       ]
     },
     "Notebook": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Notebook",
       "type": "object",
-      "description": "Represents a notebook with its details, including pricing, discounts, and taxes.",
+      "description": "Represents a notebook with its details, including pricing, discounts, and taxes. This is a denormalized entity.",
       "properties": {
         "id": {
           "type": "string",
@@ -67,7 +88,11 @@
         },
         "uploadId": {
           "type": "string",
-          "description": "Reference to the Upload entity. (Relationship: Upload 1:N Notebook)"
+          "description": "Reference to the Upload entity."
+        },
+         "userId": {
+          "type": "string",
+          "description": "The ID of the user who uploaded the book."
         },
         "bookName": {
           "type": "string",
@@ -100,18 +125,35 @@
         "finalPrice": {
           "type": "number",
           "description": "The final calculated price of the notebook after applying discounts and taxes."
+        },
+        "class": {
+          "type": "string",
+          "description": "The class associated with the upload."
+        },
+        "courseCombination": {
+          "type": "string",
+          "description": "The course combination associated with the upload."
+        },
+        "uploadTimestamp": {
+          "type": "string",
+          "description": "The timestamp of when the upload occurred.",
+          "format": "date-time"
         }
       },
       "required": [
         "id",
         "uploadId",
+        "userId",
         "bookName",
         "subject",
         "publisher",
         "price",
         "discount",
         "tax",
-        "finalPrice"
+        "finalPrice",
+        "class",
+        "courseCombination",
+        "uploadTimestamp"
       ]
     },
     "Upload": {
@@ -302,7 +344,7 @@
           "schema": {
             "$ref": "#/backend/entities/Textbook"
           },
-          "description": "Stores textbook data associated with a specific upload. Enforces path-based ownership.",
+          "description": "Stores denormalized textbook data associated with a specific upload. Enforces path-based ownership and user ID check on the document.",
           "params": [
             {
               "name": "userId",
@@ -326,7 +368,7 @@
           "schema": {
             "$ref": "#/backend/entities/Notebook"
           },
-          "description": "Stores notebook data associated with a specific upload. Enforces path-based ownership.",
+          "description": "Stores denormalized notebook data associated with a specific upload. Enforces path-based ownership and user ID check on the document.",
           "params": [
             {
               "name": "userId",
@@ -364,6 +406,6 @@
         }
       }
     ],
-    "reasoning": "The Firestore data structure is designed to manage textbook and notebook data, along with upload metadata and frequently used book data. The design prioritizes authorization independence and facilitates secure list operations. It uses path-based ownership for user-related data and denormalization to avoid hierarchical authorization dependencies.\n\n**Authorization Independence:** The structure avoids `get()` calls in security rules by denormalizing authorization context. For example, the `Upload` documents store the `userId`, enabling rules to verify ownership without reading the User document.\n\n**Structural Segregation:** The structure segregates data with different access needs into separate collections. User-specific data (like uploads and frequent book data) resides under `/users/{userId}`, while uploads are stored independently.\n\n**Access Modeling:** Path-based ownership is used for user-owned data (e.g., `/users/{userId}/uploads/{uploadId}`).\n\n**QAPs (Rules are not Filters):** The structure ensures secure `list` operations by using path-based ownership and segregation. Listing uploads under a specific user ID is secure because the path inherently restricts access to that user's data."
+    "reasoning": "The Firestore data structure is designed to manage textbook and notebook data, along with upload metadata and frequently used book data. The design prioritizes authorization independence and facilitates secure list operations. It uses path-based ownership for user-related data and denormalization to avoid hierarchical authorization dependencies.\n\n**Authorization Independence:** The structure avoids `get()` calls in security rules by denormalizing authorization context. For example, the `Upload` documents store the `userId`, enabling rules to verify ownership without reading the User document. Denormalizing class and course data onto each book record makes list queries on the data explorer page much more efficient.\n\n**Structural Segregation:** The structure segregates data with different access needs into separate collections. User-specific data (like uploads and frequent book data) resides under `/users/{userId}`.\n\n**Access Modeling:** Path-based ownership is used for all user-owned data (e.g., `/users/{userId}/uploads/{uploadId}`).\n\n**QAPs (Rules are not Filters):** The structure ensures secure `list` operations by using path-based ownership and segregation, as well as `where` clauses on `collectionGroup` queries. Listing uploads under a specific user ID is secure because the path inherently restricts access to that user's data. `collectionGroup` queries for books are secured by checking `request.resource.data.userId == request.auth.uid`."
   }
 }

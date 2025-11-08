@@ -4,7 +4,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useFirebase, useUser, useMemoFirebase } from '@/firebase';
 import { collection, getDocs, query, collectionGroup, where, Query, doc } from 'firebase/firestore';
-import type { Upload, Book, BookType } from '@/lib/types';
+import type { Upload, Book, BookType, DenormalizedBook } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -12,13 +12,6 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 
-type EnrichedBook = Book & {
-    uploadId: string;
-    class: string;
-    courseCombination: string;
-    uploadTimestamp: Date;
-    type: BookType;
-};
 
 export default function DataExplorer() {
   const { firestore } = useFirebase();
@@ -27,7 +20,7 @@ export default function DataExplorer() {
   const [classFilter, setClassFilter] = useState<string>('all');
   const [publisherFilter, setPublisherFilter] = useState<string>('');
   const [bookTypeFilter, setBookTypeFilter] = useState<BookType | 'all'>('all');
-  const [allBooks, setAllBooks] = useState<EnrichedBook[]>([]);
+  const [allBooks, setAllBooks] = useState<DenormalizedBook[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
   useEffect(() => {
@@ -38,25 +31,16 @@ export default function DataExplorer() {
         }
 
         setIsLoading(true);
-        const enrichedBooks: EnrichedBook[] = [];
+        const books: DenormalizedBook[] = [];
 
         try {
-            // 1. Fetch all uploads in one go
-            const uploadsRef = collection(firestore, 'users', user.uid, 'uploads');
-            const uploadSnapshots = await getDocs(uploadsRef);
-            const uploadsMap = new Map<string, Upload>();
-            uploadSnapshots.docs.forEach(doc => {
-                uploadsMap.set(doc.id, { id: doc.id, ...doc.data() } as Upload);
-            });
-
-            // 2. Fetch all textbooks and notebooks using collectionGroup queries
             const textbooksQuery = query(
                 collectionGroup(firestore, 'textbooks'),
-                where('uploadId', 'in', Array.from(uploadsMap.keys()))
+                where('userId', '==', user.uid)
             );
             const notebooksQuery = query(
                 collectionGroup(firestore, 'notebooks'),
-                where('uploadId', 'in', Array.from(uploadsMap.keys()))
+                where('userId', '==', user.uid)
             );
             
             const [textbookSnap, notebookSnap] = await Promise.all([
@@ -64,40 +48,25 @@ export default function DataExplorer() {
                 getDocs(notebooksQuery)
             ]);
 
-            // 3. Process and enrich the data
             textbookSnap.forEach(doc => {
-                const bookData = doc.data() as Book;
-                const upload = uploadsMap.get(bookData.uploadId);
-                if (upload) {
-                    enrichedBooks.push({
-                        ...bookData,
-                        id: doc.id,
-                        uploadId: upload.id,
-                        class: upload.class,
-                        courseCombination: upload.courseCombination,
-                        uploadTimestamp: upload.uploadTimestamp.toDate(),
-                        type: 'Textbook'
-                    });
-                }
+                const bookData = doc.data() as Omit<DenormalizedBook, 'type'>;
+                books.push({
+                    ...bookData,
+                    id: doc.id,
+                    type: 'Textbook'
+                });
             });
             
             notebookSnap.forEach(doc => {
-                const bookData = doc.data() as Book;
-                const upload = uploadsMap.get(bookData.uploadId);
-                 if (upload) {
-                    enrichedBooks.push({
-                        ...bookData,
-                        id: doc.id,
-                        uploadId: upload.id,
-                        class: upload.class,
-                        courseCombination: upload.courseCombination,
-                        uploadTimestamp: upload.uploadTimestamp.toDate(),
-                        type: 'Notebook'
-                    });
-                }
+                 const bookData = doc.data() as Omit<DenormalizedBook, 'type'>;
+                books.push({
+                    ...bookData,
+                    id: doc.id,
+                    type: 'Notebook'
+                });
             });
             
-            setAllBooks(enrichedBooks);
+            setAllBooks(books);
         } catch (error) {
             console.error("Error fetching all book data:", error);
         } finally {
