@@ -69,16 +69,6 @@ const safeNumber = (val: any): number => {
   return isFinite(num) && !isNaN(num) ? num : 0;
 };
 
-// ✅ Sanitize chart data
-function sanitizeChartData(data: Record<string, any>[]): Record<string, any>[] {
-  return data
-    .map((item) => ({
-      name: item.name?.toString() || "Unknown",
-      value: safeNumber(item.value),
-    }))
-    .filter((item) => typeof item.value === "number" && isFinite(item.value));
-}
-
 // 🎨 Bar colors
 const COLORS = [
   "#4F46E5", "#10B981", "#F59E0B", "#EF4444", "#3B82F6",
@@ -184,25 +174,27 @@ export default function DataExplorer() {
   const classChartData = useMemo(() => {
     const grouped = filteredBooks.reduce((acc, b) => {
       const key = b.class || "Unknown";
-      acc[key] = (acc[key] || 0) + (chartMode === "cost" ? b.finalPrice : 1);
+      const value = chartMode === "cost" ? b.finalPrice : 1;
+      acc[key] = (acc[key] || 0) + safeNumber(value);
       return acc;
     }, {} as Record<string, number>);
-    return sanitizeChartData(Object.entries(grouped).map(([name, value]) => ({
+    return Object.entries(grouped).map(([name, value]) => ({
       name: `Class ${name}`,
       value,
-    })));
+    }));
   }, [filteredBooks, chartMode]);
 
   const publisherChartData = useMemo(() => {
     const grouped = filteredBooks.reduce((acc, b) => {
       const key = b.publisher || "Unknown";
-      acc[key] = (acc[key] || 0) + (chartMode === "cost" ? b.finalPrice : 1);
+      const value = chartMode === "cost" ? b.finalPrice : 1;
+      acc[key] = (acc[key] || 0) + safeNumber(value);
       return acc;
     }, {} as Record<string, number>);
-    return sanitizeChartData(Object.entries(grouped).map(([name, value]) => ({
+    return Object.entries(grouped).map(([name, value]) => ({
       name,
       value,
-    })));
+    }));
   }, [filteredBooks, chartMode]);
 
   // 🗑 Delete all
