@@ -86,7 +86,7 @@ export function MultiSelect({
                 <CommandItem
                   key={opt.value}
                   onSelect={() => handleSelect(opt.value)}
-                  className="flex items-center justify-between"
+                  className="flex items-center justify-between cursor-pointer hover:bg-accent hover:text-accent-foreground"
                 >
                   <span>{opt.label}</span>
                   {selected.includes(opt.value) && (
@@ -99,7 +99,7 @@ export function MultiSelect({
               <>
                 <Separator />
                 <CommandGroup>
-                    <CommandItem onSelect={handleClear} className="justify-center text-center">
+                    <CommandItem onSelect={handleClear} className="justify-center text-center cursor-pointer hover:bg-accent hover:text-accent-foreground">
                         Clear filters
                     </CommandItem>
                 </CommandGroup>
