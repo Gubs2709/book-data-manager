@@ -32,6 +32,14 @@ import { useFirebase, useUser, useCollection, useMemoFirebase } from "@/firebase
 import { collection, doc, writeBatch } from "firebase/firestore";
 import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates";
 
+const createBookId = (book: Partial<Book>, type: BookType): string => {
+  let id = `${book.bookName}-${book.publisher}-${type}`;
+  if (type === 'Notebook' && book.pages) {
+    id += `-${book.pages}`;
+  }
+  return id.replace(/[^a-zA-Z0-9-]/g, '');
+};
+
 export default function CalculatorDashboard() {
   const [textbooks, setTextbooks] = useState<Book[]>([]);
   const [notebooks, setNotebooks] = useState<Book[]>([]);
@@ -55,20 +63,25 @@ export default function CalculatorDashboard() {
   const { data: frequentBookData } = useCollection<FrequentBookData>(frequentBookDataQuery);
 
   const frequentBookDataMap = useMemo(() => {
-    const map = new Map<string, Omit<FrequentBookData, 'id' | 'userId' | 'bookName'>>();
+    const map = new Map<string, Omit<FrequentBookData, 'id' | 'userId'>>();
     if (frequentBookData) {
       for (const item of frequentBookData) {
-        map.set(`${item.bookName}-${item.type}`, {
+        const key = createBookId(item, item.type);
+        map.set(key, {
+          bookName: item.bookName,
+          publisher: item.publisher,
+          price: item.price,
           discount: item.discount,
           tax: item.tax,
           type: item.type,
+          pages: item.pages
         });
       }
     }
     return map;
   }, [frequentBookData]);
 
-  const calculateFinalPrice = (book: Omit<Book, 'finalPrice'>): number => {
+  const calculateFinalPrice = (book: Omit<Book, 'finalPrice' | 'id'>): number => {
     const priceAfterDiscount = book.price * (1 - book.discount / 100);
     const finalPrice = priceAfterDiscount * (1 + book.tax / 100);
     return finalPrice;
@@ -76,9 +89,15 @@ export default function CalculatorDashboard() {
 
   const applyFrequentData = (books: Book[], type: BookType): Book[] => {
     return books.map(book => {
-      const frequentData = frequentBookDataMap.get(`${book.bookName}-${type}`);
+      const key = createBookId(book, type);
+      const frequentData = frequentBookDataMap.get(key);
       if (frequentData) {
-        const newBook = { ...book, discount: frequentData.discount, tax: frequentData.tax };
+        const newBook = { 
+          ...book, 
+          price: frequentData.price,
+          discount: frequentData.discount, 
+          tax: frequentData.tax 
+        };
         return { ...newBook, finalPrice: calculateFinalPrice(newBook) };
       }
       return { ...book, finalPrice: calculateFinalPrice(book) };
@@ -142,15 +161,21 @@ export default function CalculatorDashboard() {
                     subject: row.subject || 'N/A',
                     publisher: row.publisher || 'N/A',
                     price: parseFloat(row.price) || 0,
+                    pages: type === 'Notebook' ? parseInt(row.pages) || undefined : undefined,
                     discount,
                     tax,
                     finalPrice: 0,
                 };
-                return { ...book, finalPrice: calculateFinalPrice(book) };
+                 const key = createBookId(book, type);
+                 const frequentData = frequentBookDataMap.get(key);
+                 if (frequentData) {
+                    book.price = frequentData.price;
+                    book.discount = frequentData.discount;
+                    book.tax = frequentData.tax;
+                 }
+                book.finalPrice = calculateFinalPrice(book);
+                return book;
             });
-            if (frequentBookDataMap.size > 0) {
-              parsedBooks = applyFrequentData(parsedBooks, type);
-            }
             return parsedBooks;
         };
 
@@ -182,15 +207,20 @@ export default function CalculatorDashboard() {
 
   const saveFrequentBookData = (book: Book, type: BookType) => {
     if (!user || !firestore) return;
-    const docId = `${book.bookName}-${type}`.replace(/[^a-zA-Z0-9-]/g, '');
+    const docId = createBookId(book, type);
+    if (!docId) return;
+
     const docRef = doc(firestore, 'users', user.uid, 'frequent_book_data', docId);
 
     const dataToSave: Omit<FrequentBookData, 'id'> = {
       userId: user.uid,
       bookName: book.bookName,
+      publisher: book.publisher,
+      price: book.price,
       discount: book.discount,
       tax: book.tax,
       type: type,
+      ...(type === 'Notebook' && { pages: book.pages }),
     };
     setDocumentNonBlocking(docRef, dataToSave, { merge: true });
   }
@@ -202,9 +232,7 @@ export default function CalculatorDashboard() {
       prevBooks.map(book => {
         if (book.id === bookId) {
           const updatedBook = { ...book, [field]: value };
-          if (field === 'discount' || field === 'tax') {
-            saveFrequentBookData(updatedBook, bookType);
-          }
+          saveFrequentBookData(updatedBook, bookType);
           return { ...updatedBook, finalPrice: calculateFinalPrice(updatedBook) };
         }
         return book;
@@ -241,6 +269,7 @@ export default function CalculatorDashboard() {
       'Book Name': book.bookName,
       'Subject': book.subject,
       'Publisher': book.publisher,
+      'Pages': book.pages,
       'Price': book.price,
       'Discount (%)': book.discount,
       'Tax (%)': book.tax,
@@ -265,21 +294,29 @@ export default function CalculatorDashboard() {
     }
 
     const batch = writeBatch(firestore);
+    
     const allBooks = [...textbooks, ...notebooks];
-    const bookType = (book: Book) => textbooks.includes(book) ? 'Textbook' : 'Notebook';
+    const processedBooks = new Set<string>();
 
     allBooks.forEach(book => {
-      const type = bookType(book);
-      const docId = `${book.bookName}-${type}`.replace(/[^a-zA-Z0-9-]/g, '');
-      const docRef = doc(firestore, 'users', user.uid, 'frequent_book_data', docId);
-      const dataToSave: Omit<FrequentBookData, 'id'> = {
-        userId: user.uid,
-        bookName: book.bookName,
-        discount: book.discount,
-        tax: book.tax,
-        type: type,
-      };
-      batch.set(docRef, dataToSave, { merge: true });
+      const bookType = textbooks.includes(book) ? 'Textbook' : 'Notebook';
+      const docId = createBookId(book, bookType);
+      
+      if (!processedBooks.has(docId)) {
+        const docRef = doc(firestore, 'users', user.uid, 'frequent_book_data', docId);
+        const dataToSave: Omit<FrequentBookData, 'id'> = {
+            userId: user.uid,
+            bookName: book.bookName,
+            publisher: book.publisher,
+            price: book.price,
+            discount: book.discount,
+            tax: book.tax,
+            type: bookType,
+            ...(bookType === 'Notebook' && { pages: book.pages }),
+        };
+        batch.set(docRef, dataToSave, { merge: true });
+        processedBooks.add(docId);
+      }
     });
 
     try {
@@ -368,7 +405,7 @@ export default function CalculatorDashboard() {
                     <Label htmlFor="excel-upload">Upload Book List (Excel)</Label>
                     <Input id="excel-upload" type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx, .xls" className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"/>
                     <p className="text-xs text-muted-foreground">
-                        Your Excel file should have two sheets: "Textbooks" and "Notebooks". Each sheet should contain columns: 'bookName', 'subject', 'publisher', and 'price'.
+                        Your Excel file should have two sheets: "Textbooks" and "Notebooks". Each sheet should contain columns: 'bookName', 'subject', 'publisher', 'price', and for notebooks, 'pages'.
                     </p>
                 </div>
               </CardContent>
@@ -413,6 +450,7 @@ export default function CalculatorDashboard() {
                  books={notebooks}
                  onBookUpdate={(id, field, value) => handleUpdateBook('notebooks', id, field, value)}
                  onApplyAll={(field, value) => handleApplyAll('notebooks', field, value)}
+                 isNotebookTable={true}
                />
                <Card className="shadow-lg">
                 <CardHeader>

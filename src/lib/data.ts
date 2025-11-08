@@ -9,8 +9,8 @@ export const TEXTBOOKS_MOCK: Book[] = [
 ];
 
 export const NOTEBOOKS_MOCK: Book[] = [
-  { id: 1, bookName: 'Single Line A4 Notebook', subject: 'General', publisher: 'Classmate', price: 40, discount: 0, tax: 0, finalPrice: 40 },
-  { id: 2, bookName: 'Graph Book', subject: 'Math', publisher: 'Classmate', price: 35, discount: 0, tax: 0, finalPrice: 35 },
-  { id: 3, bookName: 'Unruled A5 Sketchbook', subject: 'Drawing', publisher: 'Navneet', price: 30, discount: 0, tax: 0, finalPrice: 30 },
-  { id: 4, bookName: 'Practical Journal', subject: 'Science', publisher: 'Navneet', price: 55, discount: 0, tax: 0, finalPrice: 55 },
+  { id: 1, bookName: 'Single Line A4 Notebook', subject: 'General', publisher: 'Classmate', pages: 180, price: 40, discount: 0, tax: 0, finalPrice: 40 },
+  { id: 2, bookName: 'Graph Book', subject: 'Math', publisher: 'Classmate', pages: 60, price: 35, discount: 0, tax: 0, finalPrice: 35 },
+  { id: 3, bookName: 'Unruled A5 Sketchbook', subject: 'Drawing', publisher: 'Navneet', pages: 100, price: 30, discount: 0, tax: 0, finalPrice: 30 },
+  { id: 4, bookName: 'Practical Journal', subject: 'Science', publisher: 'Navneet', pages: 120, price: 55, discount: 0, tax: 0, finalPrice: 55 },
 ];

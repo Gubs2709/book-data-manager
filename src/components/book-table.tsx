@@ -27,6 +27,7 @@ interface BookTableProps {
   books: Book[];
   onBookUpdate: (bookId: number, field: keyof Omit<Book, 'id' | 'finalPrice'>, value: string | number) => void;
   onApplyAll: (field: "discount" | "tax", value: number) => void;
+  isNotebookTable?: boolean;
 }
 
 export function BookTable({
@@ -35,6 +36,7 @@ export function BookTable({
   books,
   onBookUpdate,
   onApplyAll,
+  isNotebookTable = false,
 }: BookTableProps) {
   const [allDiscount, setAllDiscount] = useState(0);
   const [allTax, setAllTax] = useState(0);
@@ -88,6 +90,7 @@ export function BookTable({
                 <TableHead className="min-w-[250px] font-semibold">Book Name</TableHead>
                 <TableHead className="min-w-[150px] font-semibold">Subject</TableHead>
                 <TableHead className="min-w-[150px] font-semibold">Publisher</TableHead>
+                {isNotebookTable && <TableHead className="min-w-[100px] font-semibold">Pages</TableHead>}
                 <TableHead className="min-w-[120px] text-right font-semibold">Price</TableHead>
                 <TableHead className="w-[120px] text-right font-semibold">Discount (%)</TableHead>
                 <TableHead className="w-[120px] text-right font-semibold">Tax (%)</TableHead>
@@ -125,6 +128,18 @@ export function BookTable({
                       aria-label={`Publisher for ${book.bookName}`}
                     />
                   </TableCell>
+                  {isNotebookTable && (
+                    <TableCell>
+                      <Input
+                        type="number"
+                        value={book.pages || ''}
+                        onChange={(e) =>
+                          onBookUpdate(book.id, "pages", parseInt(e.target.value) || 0)
+                        }
+                        aria-label={`Pages for ${book.bookName}`}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell>
                     <Input
                       type="number"

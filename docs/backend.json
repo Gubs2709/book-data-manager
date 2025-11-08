@@ -22,6 +22,10 @@
           "type": "string",
           "description": "The subject of the textbook."
         },
+        "publisher": {
+          "type": "string",
+          "description": "The publisher of the textbook."
+        },
         "price": {
           "type": "number",
           "description": "The price of the textbook."
@@ -44,6 +48,7 @@
         "uploadId",
         "bookName",
         "subject",
+        "publisher",
         "price",
         "discount",
         "tax",
@@ -72,6 +77,14 @@
           "type": "string",
           "description": "The subject of the notebook."
         },
+        "publisher": {
+          "type": "string",
+          "description": "The publisher of the notebook."
+        },
+        "pages": {
+          "type": "number",
+          "description": "The number of pages in the notebook."
+        },
         "price": {
           "type": "number",
           "description": "The price of the notebook."
@@ -94,6 +107,7 @@
         "uploadId",
         "bookName",
         "subject",
+        "publisher",
         "price",
         "discount",
         "tax",
@@ -186,11 +200,11 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "FrequentBookData",
       "type": "object",
-      "description": "Stores frequently appearing book data like discount and tax for easy reuse.",
+      "description": "Stores frequently appearing book data like price, discount, and tax for easy reuse.",
       "properties": {
         "id": {
           "type": "string",
-          "description": "Unique identifier for the FrequentBookData entity."
+          "description": "Unique identifier for the FrequentBookData entity, often a composite key."
         },
         "userId": {
           "type": "string",
@@ -199,6 +213,14 @@
         "bookName": {
           "type": "string",
           "description": "The name of the book."
+        },
+        "publisher": {
+          "type": "string",
+          "description": "The publisher of the book."
+        },
+        "price": {
+          "type": "number",
+          "description": "The stored price of the book."
         },
         "discount": {
           "type": "number",
@@ -211,12 +233,18 @@
         "type": {
           "type": "string",
           "description": "The type of the book (Textbook or Notebook)."
+        },
+        "pages": {
+            "type": "number",
+            "description": "The number of pages, applicable for notebooks."
         }
       },
       "required": [
         "id",
         "userId",
         "bookName",
+        "publisher",
+        "price",
         "discount",
         "tax",
         "type"
