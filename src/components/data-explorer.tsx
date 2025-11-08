@@ -115,7 +115,7 @@ export default function DataExplorer() {
         getDocs(collectionGroup(firestore, "notebooks")),
       ]);
 
-      const sanitizeRawDoc = (d: any, type: string) => {
+      const sanitizeRawDoc = (d: any, type: string): BookData => {
         const data = d.data();
         return {
           id: d.id,
