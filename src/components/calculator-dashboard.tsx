@@ -1,8 +1,8 @@
 
 "use client";
 
-import { useState, useMemo, useRef } from "react";
-import type { Book } from "@/lib/types";
+import { useState, useMemo, useRef, useEffect } from "react";
+import type { Book, FrequentBookData, BookType } from "@/lib/types";
 import { TEXTBOOKS_MOCK, NOTEBOOKS_MOCK } from "@/lib/data";
 import { BookTable } from "./book-table";
 import Header from "./header";
@@ -24,10 +24,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calculator, Download, FileUp, Undo2, BookOpen, GraduationCap } from "lucide-react";
+import { Calculator, Download, FileUp, Undo2, BookOpen, GraduationCap, Save } from "lucide-react";
 import { Separator } from "./ui/separator";
 import * as XLSX from 'xlsx';
 import { useToast } from "@/hooks/use-toast";
+import { useFirebase, useUser, useCollection, useMemoFirebase } from "@/firebase";
+import { collection, doc, writeBatch } from "firebase/firestore";
+import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates";
 
 export default function CalculatorDashboard() {
   const [textbooks, setTextbooks] = useState<Book[]>([]);
@@ -35,6 +38,8 @@ export default function CalculatorDashboard() {
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const { firestore } = useFirebase();
+  const { user } = useUser();
 
   // Form state
   const [className, setClassName] = useState("12");
@@ -44,11 +49,41 @@ export default function CalculatorDashboard() {
   const [initialNotebookDiscount, setInitialNotebookDiscount] = useState(15);
   const [initialNotebookTax, setInitialNotebookTax] = useState(5);
 
+  const frequentBookDataQuery = useMemoFirebase(() => 
+    user && firestore ? collection(firestore, 'users', user.uid, 'frequent_book_data') : null
+  , [firestore, user]);
+  const { data: frequentBookData } = useCollection<FrequentBookData>(frequentBookDataQuery);
+
+  const frequentBookDataMap = useMemo(() => {
+    const map = new Map<string, Omit<FrequentBookData, 'id' | 'userId' | 'bookName'>>();
+    if (frequentBookData) {
+      for (const item of frequentBookData) {
+        map.set(`${item.bookName}-${item.type}`, {
+          discount: item.discount,
+          tax: item.tax,
+          type: item.type,
+        });
+      }
+    }
+    return map;
+  }, [frequentBookData]);
+
   const calculateFinalPrice = (book: Omit<Book, 'finalPrice'>): number => {
     const priceAfterDiscount = book.price * (1 - book.discount / 100);
     const finalPrice = priceAfterDiscount * (1 + book.tax / 100);
     return finalPrice;
   };
+
+  const applyFrequentData = (books: Book[], type: BookType): Book[] => {
+    return books.map(book => {
+      const frequentData = frequentBookDataMap.get(`${book.bookName}-${type}`);
+      if (frequentData) {
+        const newBook = { ...book, discount: frequentData.discount, tax: frequentData.tax };
+        return { ...newBook, finalPrice: calculateFinalPrice(newBook) };
+      }
+      return { ...book, finalPrice: calculateFinalPrice(book) };
+    });
+  }
 
   const totals = useMemo(() => {
     const textbookTotal = textbooks.reduce((sum, book) => sum + book.finalPrice, 0);
@@ -64,8 +99,16 @@ export default function CalculatorDashboard() {
         return { ...newBook, finalPrice: calculateFinalPrice(newBook) };
       });
 
-    setTextbooks(applyInitialValues(TEXTBOOKS_MOCK, initialTextbookDiscount, initialTextbookTax));
-    setNotebooks(applyInitialValues(NOTEBOOKS_MOCK, initialNotebookDiscount, initialNotebookTax));
+    let processedTextbooks = applyInitialValues(TEXTBOOKS_MOCK, initialTextbookDiscount, initialTextbookTax);
+    let processedNotebooks = applyInitialValues(NOTEBOOKS_MOCK, initialNotebookDiscount, initialNotebookTax);
+    
+    if (frequentBookDataMap.size > 0) {
+      processedTextbooks = applyFrequentData(processedTextbooks, 'Textbook');
+      processedNotebooks = applyFrequentData(processedNotebooks, 'Notebook');
+    }
+
+    setTextbooks(processedTextbooks);
+    setNotebooks(processedNotebooks);
     setIsDataLoaded(true);
     toast({ title: "Success", description: "Mock data loaded successfully." });
   };
@@ -89,10 +132,10 @@ export default function CalculatorDashboard() {
           throw new Error("Excel file must contain 'Textbooks' and/or 'Notebooks' sheets.");
         }
 
-        const parseSheet = (sheet: XLSX.WorkSheet, discount: number, tax: number): Book[] => {
+        const parseSheet = (sheet: XLSX.WorkSheet, discount: number, tax: number, type: BookType): Book[] => {
             if (!sheet) return [];
             const jsonData = XLSX.utils.sheet_to_json<any>(sheet);
-            return jsonData.map((row, index) => {
+            let parsedBooks = jsonData.map((row, index) => {
                 const book: Book = {
                     id: row.id || index + 1,
                     bookName: row.bookName || '',
@@ -105,10 +148,14 @@ export default function CalculatorDashboard() {
                 };
                 return { ...book, finalPrice: calculateFinalPrice(book) };
             });
+            if (frequentBookDataMap.size > 0) {
+              parsedBooks = applyFrequentData(parsedBooks, type);
+            }
+            return parsedBooks;
         };
 
-        const loadedTextbooks = parseSheet(textbookSheet, initialTextbookDiscount, initialTextbookTax);
-        const loadedNotebooks = parseSheet(notebookSheet, initialNotebookDiscount, initialNotebookTax);
+        const loadedTextbooks = parseSheet(textbookSheet, initialTextbookDiscount, initialTextbookTax, 'Textbook');
+        const loadedNotebooks = parseSheet(notebookSheet, initialNotebookDiscount, initialNotebookTax, 'Notebook');
         
         setTextbooks(loadedTextbooks);
         setNotebooks(loadedNotebooks);
@@ -132,13 +179,32 @@ export default function CalculatorDashboard() {
         fileInputRef.current.value = "";
     }
   }
+
+  const saveFrequentBookData = (book: Book, type: BookType) => {
+    if (!user || !firestore) return;
+    const docId = `${book.bookName}-${type}`.replace(/[^a-zA-Z0-9-]/g, '');
+    const docRef = doc(firestore, 'users', user.uid, 'frequent_book_data', docId);
+
+    const dataToSave: Omit<FrequentBookData, 'id'> = {
+      userId: user.uid,
+      bookName: book.bookName,
+      discount: book.discount,
+      tax: book.tax,
+      type: type,
+    };
+    setDocumentNonBlocking(docRef, dataToSave, { merge: true });
+  }
   
   const handleUpdateBook = (table: 'textbooks' | 'notebooks', bookId: number, field: keyof Omit<Book, 'id' | 'finalPrice'>, value: string | number) => {
     const updater = table === 'textbooks' ? setTextbooks : setNotebooks;
+    const bookType = table === 'textbooks' ? 'Textbook' : 'Notebook';
     updater(prevBooks =>
       prevBooks.map(book => {
         if (book.id === bookId) {
           const updatedBook = { ...book, [field]: value };
+          if (field === 'discount' || field === 'tax') {
+            saveFrequentBookData(updatedBook, bookType);
+          }
           return { ...updatedBook, finalPrice: calculateFinalPrice(updatedBook) };
         }
         return book;
@@ -148,25 +214,81 @@ export default function CalculatorDashboard() {
 
   const handleApplyAll = (table: 'textbooks' | 'notebooks', field: 'discount' | 'tax', value: number) => {
     const updater = table === 'textbooks' ? setTextbooks : setNotebooks;
+    const bookType = table === 'textbooks' ? 'Textbook' : 'Notebook';
     updater(prevBooks =>
       prevBooks.map(book => {
         const updatedBook = { ...book, [field]: value };
+        saveFrequentBookData(updatedBook, bookType);
         return { ...updatedBook, finalPrice: calculateFinalPrice(updatedBook) };
       })
     );
   };
 
   const handleDownload = () => {
-    alert("Download functionality is mocked. In a real app, this would generate and download an Excel file. Check the browser console for the data that would be exported.");
     const fileName = `${className}_${course}_EduBook_Calculated.xlsx`;
-    console.log(`Preparing to download: ${fileName}`);
-    console.log({
-        className,
-        course,
-        textbooks,
-        notebooks,
-        totals,
+    
+    const textbookSheetData = textbooks.map(book => ({
+      'Book Name': book.bookName,
+      'Subject': book.subject,
+      'Publisher': book.publisher,
+      'Price': book.price,
+      'Discount (%)': book.discount,
+      'Tax (%)': book.tax,
+      'Final Price': book.finalPrice,
+    }));
+
+    const notebookSheetData = notebooks.map(book => ({
+      'Book Name': book.bookName,
+      'Subject': book.subject,
+      'Publisher': book.publisher,
+      'Price': book.price,
+      'Discount (%)': book.discount,
+      'Tax (%)': book.tax,
+      'Final Price': book.finalPrice,
+    }));
+
+    const wb = XLSX.utils.book_new();
+    const wsTextbooks = XLSX.utils.json_to_sheet(textbookSheetData);
+    const wsNotebooks = XLSX.utils.json_to_sheet(notebookSheetData);
+    
+    XLSX.utils.book_append_sheet(wb, wsTextbooks, "Textbooks");
+    XLSX.utils.book_append_sheet(wb, wsNotebooks, "Notebooks");
+
+    XLSX.writeFile(wb, fileName);
+    toast({ title: "Success", description: "Excel file has been downloaded." });
+  }
+
+  const handleSaveAllSettings = async () => {
+    if (!user || !firestore) {
+      toast({ variant: 'destructive', title: 'Error', description: 'You must be logged in to save settings.' });
+      return;
+    }
+
+    const batch = writeBatch(firestore);
+    const allBooks = [...textbooks, ...notebooks];
+    const bookType = (book: Book) => textbooks.includes(book) ? 'Textbook' : 'Notebook';
+
+    allBooks.forEach(book => {
+      const type = bookType(book);
+      const docId = `${book.bookName}-${type}`.replace(/[^a-zA-Z0-9-]/g, '');
+      const docRef = doc(firestore, 'users', user.uid, 'frequent_book_data', docId);
+      const dataToSave: Omit<FrequentBookData, 'id'> = {
+        userId: user.uid,
+        bookName: book.bookName,
+        discount: book.discount,
+        tax: book.tax,
+        type: type,
+      };
+      batch.set(docRef, dataToSave, { merge: true });
     });
+
+    try {
+      await batch.commit();
+      toast({ title: "Success", description: "All book settings saved successfully." });
+    } catch (error: any) {
+      console.error("Error saving all settings:", error);
+      toast({ variant: 'destructive', title: "Error", description: "Failed to save all settings." });
+    }
   }
   
   const formatCurrency = (value: number) => {
@@ -175,6 +297,13 @@ export default function CalculatorDashboard() {
       currency: "INR",
     }).format(value);
   };
+
+  useEffect(() => {
+    if (user === null) {
+      // Potentially handle anonymous sign-in here if desired
+    }
+  }, [user]);
+
 
   return (
     <>
@@ -265,6 +394,9 @@ export default function CalculatorDashboard() {
                             <span>{course}</span>
                         </div>
                     </div>
+                    <Button onClick={handleSaveAllSettings}>
+                      <Save className="mr-2 h-4 w-4" /> Save All Settings
+                    </Button>
                 </CardContent>
             </Card>
              <div className="space-y-8">

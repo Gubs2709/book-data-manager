@@ -8,3 +8,14 @@ export interface Book {
   tax: number;
   finalPrice: number;
 }
+
+export type BookType = 'Textbook' | 'Notebook';
+
+export interface FrequentBookData {
+    id: string;
+    userId: string;
+    bookName: string;
+    discount: number;
+    tax: number;
+    type: BookType;
+}

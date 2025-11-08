@@ -9,10 +9,23 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PlaceHolderImages } from "@/lib/placeholder-images";
-import { BookOpenCheck, LogOut, User } from "lucide-react";
+import { BookOpenCheck, LogOut, User as UserIcon, LogIn } from "lucide-react";
+import { useUser, useAuth } from "@/firebase";
+import { initiateAnonymousSignIn } from "@/firebase/non-blocking-login";
+import { signOut } from "firebase/auth";
 
 export default function Header() {
   const userAvatar = PlaceHolderImages.find(p => p.id === 'user-avatar');
+  const { user, isUserLoading } = useUser();
+  const auth = useAuth();
+
+  const handleLogin = () => {
+    initiateAnonymousSignIn(auth);
+  };
+
+  const handleLogout = () => {
+    signOut(auth);
+  };
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur-sm">
@@ -27,39 +40,48 @@ export default function Header() {
         </div>
 
         <div className="flex flex-1 items-center justify-end space-x-4">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="relative h-8 w-8 rounded-full"
-                >
-                  <Avatar className="h-9 w-9">
-                    {userAvatar && <AvatarImage src={userAvatar.imageUrl} data-ai-hint={userAvatar.imageHint} alt="User Avatar" />}
-                    <AvatarFallback>U</AvatarFallback>
-                  </Avatar>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56" align="end" forceMount>
-                <DropdownMenuLabel className="font-normal">
-                  <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">Demo User</p>
-                    <p className="text-xs leading-none text-muted-foreground">
-                      demo@edubook.com
-                    </p>
-                  </div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <User className="mr-2 h-4 w-4" />
-                  <span>Profile</span>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span>Log out</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {isUserLoading ? (
+              <div className="h-9 w-9 rounded-full bg-muted animate-pulse" />
+            ) : user ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    className="relative h-8 w-8 rounded-full"
+                  >
+                    <Avatar className="h-9 w-9">
+                      {user.photoURL ? <AvatarImage src={user.photoURL} alt="User Avatar" /> : (userAvatar && <AvatarImage src={userAvatar.imageUrl} data-ai-hint={userAvatar.imageHint} alt="User Avatar" />) }
+                      <AvatarFallback>{user.isAnonymous ? 'A' : (user.email?.charAt(0).toUpperCase() || 'U')}</AvatarFallback>
+                    </Avatar>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-56" align="end" forceMount>
+                  <DropdownMenuLabel className="font-normal">
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm font-medium leading-none">{user.isAnonymous ? "Anonymous User" : (user.displayName || "Demo User")}</p>
+                      <p className="text-xs leading-none text-muted-foreground">
+                        {user.isAnonymous ? `ID: ${user.uid.substring(0,8)}...` : user.email}
+                      </p>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem disabled>
+                    <UserIcon className="mr-2 h-4 w-4" />
+                    <span>Profile</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleLogout}>
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>Log out</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+               <Button onClick={handleLogin}>
+                  <LogIn className="mr-2 h-4 w-4" />
+                  Sign In
+              </Button>
+            )}
         </div>
       </div>
     </header>
