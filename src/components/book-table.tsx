@@ -20,6 +20,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { Book } from "@/lib/types";
+import { Search } from "lucide-react";
 
 interface BookTableProps {
   title: string;
@@ -28,6 +29,8 @@ interface BookTableProps {
   onBookUpdate: (bookId: number, field: keyof Omit<Book, 'id' | 'finalPrice'>, value: string | number) => void;
   onApplyAll: (field: "discount" | "tax", value: number) => void;
   isNotebookTable?: boolean;
+  filterValue: string;
+  onFilterChange: (value: string) => void;
 }
 
 export function BookTable({
@@ -37,6 +40,8 @@ export function BookTable({
   onBookUpdate,
   onApplyAll,
   isNotebookTable = false,
+  filterValue,
+  onFilterChange,
 }: BookTableProps) {
   const [allDiscount, setAllDiscount] = useState(0);
   const [allTax, setAllTax] = useState(0);
@@ -51,8 +56,23 @@ export function BookTable({
   return (
     <Card className="flex h-full flex-col shadow-lg">
       <CardHeader>
-        <CardTitle className="text-primary">{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle className="text-primary">{title}</CardTitle>
+            <CardDescription>{description}</CardDescription>
+          </div>
+          <div className="relative mt-4 sm:mt-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Filter books..."
+              className="w-full sm:w-[250px] pl-9"
+              value={filterValue}
+              onChange={(e) => onFilterChange(e.target.value)}
+              aria-label={`Filter ${title}`}
+            />
+          </div>
+        </div>
         <div className="mt-4 flex flex-col space-y-4 sm:flex-row sm:space-y-0 sm:space-x-4">
           <div className="flex items-center space-x-2">
             <Input

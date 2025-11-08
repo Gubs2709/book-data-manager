@@ -61,6 +61,10 @@ export default function CalculatorDashboard() {
   const [selectedPublisher, setSelectedPublisher] = useState<string | null>(null);
   const [publisherDiscount, setPublisherDiscount] = useState<number>(0);
 
+  // Filter state
+  const [textbookFilter, setTextbookFilter] = useState("");
+  const [notebookFilter, setNotebookFilter] = useState("");
+
   const frequentBookDataQuery = useMemoFirebase(() => 
     user && firestore ? collection(firestore, 'users', user.uid, 'frequent_book_data') : null
   , [firestore, user]);
@@ -108,12 +112,32 @@ export default function CalculatorDashboard() {
     });
   }
 
+  const filteredTextbooks = useMemo(() => {
+    if (!textbookFilter) return textbooks;
+    const lowercasedFilter = textbookFilter.toLowerCase();
+    return textbooks.filter(book => 
+      book.bookName.toLowerCase().includes(lowercasedFilter) ||
+      book.subject.toLowerCase().includes(lowercasedFilter) ||
+      book.publisher.toLowerCase().includes(lowercasedFilter)
+    );
+  }, [textbooks, textbookFilter]);
+
+  const filteredNotebooks = useMemo(() => {
+    if (!notebookFilter) return notebooks;
+    const lowercasedFilter = notebookFilter.toLowerCase();
+    return notebooks.filter(book =>
+      book.bookName.toLowerCase().includes(lowercasedFilter) ||
+      book.subject.toLowerCase().includes(lowercasedFilter) ||
+      book.publisher.toLowerCase().includes(lowercasedFilter)
+    );
+  }, [notebooks, notebookFilter]);
+
   const totals = useMemo(() => {
-    const textbookTotal = textbooks.reduce((sum, book) => sum + book.finalPrice, 0);
-    const notebookTotal = notebooks.reduce((sum, book) => sum + book.finalPrice, 0);
+    const textbookTotal = filteredTextbooks.reduce((sum, book) => sum + book.finalPrice, 0);
+    const notebookTotal = filteredNotebooks.reduce((sum, book) => sum + book.finalPrice, 0);
     const grandTotal = textbookTotal + notebookTotal;
     return { textbookTotal, notebookTotal, grandTotal };
-  }, [textbooks, notebooks]);
+  }, [filteredTextbooks, filteredNotebooks]);
 
   const uniquePublishers = useMemo(() => {
     const currentPublishers = [...textbooks, ...notebooks].map(book => book.publisher);
@@ -211,6 +235,8 @@ export default function CalculatorDashboard() {
     setIsDataLoaded(false);
     setTextbooks([]);
     setNotebooks([]);
+    setTextbookFilter("");
+    setNotebookFilter("");
     if(fileInputRef.current) {
         fileInputRef.current.value = "";
     }
@@ -289,7 +315,7 @@ export default function CalculatorDashboard() {
   const handleDownload = () => {
     const fileName = `${className}_${course}_EduBook_Calculated.xlsx`;
     
-    const textbookSheetData = textbooks.map(book => ({
+    const textbookSheetData = filteredTextbooks.map(book => ({
       'Book Name': book.bookName,
       'Subject': book.subject,
       'Publisher': book.publisher,
@@ -299,7 +325,7 @@ export default function CalculatorDashboard() {
       'Final Price': book.finalPrice,
     }));
 
-    const notebookSheetData = notebooks.map(book => ({
+    const notebookSheetData = filteredNotebooks.map(book => ({
       'Book Name': book.bookName,
       'Subject': book.subject,
       'Publisher': book.publisher,
@@ -510,17 +536,21 @@ export default function CalculatorDashboard() {
                <BookTable
                  title="Textbooks"
                  description="List of textbooks for the selected class."
-                 books={textbooks}
+                 books={filteredTextbooks}
                  onBookUpdate={(id, field, value) => handleUpdateBook('textbooks', id, field, value)}
                  onApplyAll={(field, value) => handleApplyAll('textbooks', field, value)}
+                 filterValue={textbookFilter}
+                 onFilterChange={setTextbookFilter}
                />
                <BookTable
                  title="Notebooks"
                  description="List of notebooks and other stationery."
-                 books={notebooks}
+                 books={filteredNotebooks}
                  onBookUpdate={(id, field, value) => handleUpdateBook('notebooks', id, field, value)}
                  onApplyAll={(field, value) => handleApplyAll('notebooks', field, value)}
                  isNotebookTable={true}
+                 filterValue={notebookFilter}
+                 onFilterChange={setNotebookFilter}
                />
                <Card className="shadow-lg">
                 <CardHeader>
