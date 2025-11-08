@@ -87,6 +87,7 @@ export function BookTable({
               <TableRow>
                 <TableHead className="min-w-[250px] font-semibold">Book Name</TableHead>
                 <TableHead className="min-w-[150px] font-semibold">Subject</TableHead>
+                <TableHead className="min-w-[150px] font-semibold">Publisher</TableHead>
                 <TableHead className="min-w-[120px] text-right font-semibold">Price</TableHead>
                 <TableHead className="w-[120px] text-right font-semibold">Discount (%)</TableHead>
                 <TableHead className="w-[120px] text-right font-semibold">Tax (%)</TableHead>
@@ -113,6 +114,15 @@ export function BookTable({
                         onBookUpdate(book.id, "subject", e.target.value)
                       }
                       aria-label={`Subject for ${book.bookName}`}
+                    />
+                  </TableCell>
+                   <TableCell>
+                     <Input
+                      value={book.publisher}
+                      onChange={(e) =>
+                        onBookUpdate(book.id, "publisher", e.target.value)
+                      }
+                      aria-label={`Publisher for ${book.bookName}`}
                     />
                   </TableCell>
                   <TableCell>

@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calculator, Download, FileUp, Undo2 } from "lucide-react";
+import { Calculator, Download, FileUp, Undo2, BookOpen, GraduationCap } from "lucide-react";
 import { Separator } from "./ui/separator";
 import * as XLSX from 'xlsx';
 import { useToast } from "@/hooks/use-toast";
@@ -97,6 +97,7 @@ export default function CalculatorDashboard() {
                     id: row.id || index + 1,
                     bookName: row.bookName || '',
                     subject: row.subject || 'N/A',
+                    publisher: row.publisher || 'N/A',
                     price: parseFloat(row.price) || 0,
                     discount,
                     tax,
@@ -238,7 +239,7 @@ export default function CalculatorDashboard() {
                     <Label htmlFor="excel-upload">Upload Book List (Excel)</Label>
                     <Input id="excel-upload" type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx, .xls" className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"/>
                     <p className="text-xs text-muted-foreground">
-                        Your Excel file should have two sheets: "Textbooks" and "Notebooks". Each sheet should contain columns: 'bookName', 'subject', and 'price'.
+                        Your Excel file should have two sheets: "Textbooks" and "Notebooks". Each sheet should contain columns: 'bookName', 'subject', 'publisher', and 'price'.
                     </p>
                 </div>
               </CardContent>
@@ -251,6 +252,21 @@ export default function CalculatorDashboard() {
           </div>
         ) : (
           <div className="space-y-8 animate-in fade-in-50 duration-500">
+            <Card className="shadow-md">
+                <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
+                    <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2 text-lg font-semibold">
+                            <GraduationCap className="h-6 w-6 text-primary" />
+                            <span>Class {className}</span>
+                        </div>
+                        <Separator orientation="vertical" className="h-6"/>
+                        <div className="flex items-center gap-2 text-lg font-semibold">
+                            <BookOpen className="h-6 w-6 text-primary" />
+                            <span>{course}</span>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
              <div className="space-y-8">
                <BookTable
                  title="Textbooks"
