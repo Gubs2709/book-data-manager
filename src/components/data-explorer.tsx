@@ -42,10 +42,6 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
   ResponsiveContainer,
 } from "recharts";
 
@@ -64,15 +60,21 @@ interface BookData {
   finalPrice?: number;
 }
 
-const COLORS = [
-  "#8884d8",
-  "#82ca9d",
-  "#ffc658",
-  "#d84a4a",
-  "#4ab3d8",
-  "#a64ad8",
-  "#f97316",
-];
+// 🧩 Utility to sanitize numbers safely
+const safeNumber = (val: any): number => {
+  const num = Number(val);
+  return isFinite(num) ? num : 0;
+};
+
+// ✅ Chart data sanitizer to ensure no invalid values are passed to Recharts
+function sanitizeChartData(data: Record<string, any>[]): Record<string, any>[] {
+  return data
+    .map((item) => ({
+      name: item.name?.toString() || "Unknown",
+      value: safeNumber(item.value),
+    }))
+    .filter((item) => typeof item.value === "number" && isFinite(item.value));
+}
 
 export default function DataExplorer() {
   const { firestore } = useFirebase();
@@ -90,9 +92,10 @@ export default function DataExplorer() {
     new Intl.NumberFormat("en-IN", {
       style: "currency",
       currency: "INR",
-    }).format(value || 0);
+    }).format(safeNumber(value));
 
-  const fetchAllBooks = async () => {
+  // 🔄 Fetch all books (textbooks + notebooks)
+  async function fetchAllBooks() {
     if (!firestore) return;
     setIsLoading(true);
     try {
@@ -100,18 +103,25 @@ export default function DataExplorer() {
         getDocs(collectionGroup(firestore, "textbooks")),
         getDocs(collectionGroup(firestore, "notebooks")),
       ]);
+
       const textbooks = textbooksSnap.docs.map((d) => ({
         id: d.id,
         path: d.ref.path,
         ...(d.data() as any),
         type: "Textbook",
+        finalPrice: safeNumber((d.data() as any).finalPrice),
+        price: safeNumber((d.data() as any).price),
       }));
+
       const notebooks = notebooksSnap.docs.map((d) => ({
         id: d.id,
         path: d.ref.path,
         ...(d.data() as any),
         type: "Notebook",
+        finalPrice: safeNumber((d.data() as any).finalPrice),
+        price: safeNumber((d.data() as any).price),
       }));
+
       setBooks([...textbooks, ...notebooks]);
       toast.success("Data loaded successfully!");
     } catch {
@@ -119,8 +129,9 @@ export default function DataExplorer() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }
 
+  // 🔍 Apply filters
   const filteredBooks = useMemo(() => {
     return books.filter((b) => {
       const matchClass =
@@ -134,21 +145,43 @@ export default function DataExplorer() {
     });
   }, [books, filterClasses, filterCourses, filterPublishers]);
 
+  // 📊 Summary
   const summary = useMemo(() => {
     const totalBooks = filteredBooks.length;
     const totalValue = filteredBooks.reduce(
-      (sum, b) => sum + (b.finalPrice || 0),
+      (sum, b) => sum + safeNumber(b.finalPrice),
       0
     );
-    const avgDiscount =
-      filteredBooks.reduce((sum, b) => sum + (b.discount || 0), 0) /
-      (totalBooks || 1);
-    const avgTax =
-      filteredBooks.reduce((sum, b) => sum + (b.tax || 0), 0) /
-      (totalBooks || 1);
+    const avgDiscount = totalBooks > 0 ? filteredBooks.reduce((sum, b) => sum + safeNumber(b.discount), 0) / totalBooks : 0;
+    const avgTax = totalBooks > 0 ? filteredBooks.reduce((sum, b) => sum + safeNumber(b.tax), 0) / totalBooks : 0;
+
     return { totalBooks, totalValue, avgDiscount, avgTax };
   }, [filteredBooks]);
 
+  // 🧮 Chart data (safe aggregation)
+  const classChartData = useMemo(() => {
+    const grouped: Record<string, number> = {};
+    filteredBooks.forEach((b) => {
+      const key = b.class || "Unknown";
+      grouped[key] = (grouped[key] || 0) + safeNumber(b.finalPrice);
+    });
+    return sanitizeChartData(
+      Object.entries(grouped).map(([name, value]) => ({ name, value }))
+    );
+  }, [filteredBooks]);
+
+  const publisherChartData = useMemo(() => {
+    const grouped: Record<string, number> = {};
+    filteredBooks.forEach((b) => {
+      const key = b.publisher || "Unknown";
+      grouped[key] = (grouped[key] || 0) + safeNumber(b.finalPrice);
+    });
+    return sanitizeChartData(
+      Object.entries(grouped).map(([name, value]) => ({ name, value }))
+    );
+  }, [filteredBooks]);
+
+  // 🎚 Filter options
   const classOptions = Array.from(new Set(books.map((b) => b.class)))
     .filter(Boolean)
     .sort()
@@ -168,7 +201,12 @@ export default function DataExplorer() {
     .sort()
     .map((pub) => ({ label: pub, value: pub }));
 
-  const handleDeleteAll = async () => {
+  // 🗑 Delete all entries
+  async function handleDeleteAll() {
+    if (!firestore) {
+      toast.error("Firestore not initialized.");
+      return;
+    }
     if (!confirm("⚠️ Are you sure you want to delete ALL data?")) return;
     try {
       await Promise.all(books.map((b) => deleteDoc(doc(firestore, b.path))));
@@ -177,9 +215,10 @@ export default function DataExplorer() {
     } catch {
       toast.error("Error deleting data");
     }
-  };
+  }
 
-  const handleDownload = (filteredOnly: boolean = false) => {
+  // 📥 Download
+  const handleDownload = (filteredOnly = false) => {
     const data = filteredOnly ? filteredBooks : books;
     if (data.length === 0) return toast.warning("No data to download!");
 
@@ -190,10 +229,10 @@ export default function DataExplorer() {
         "Book Name": b.bookName,
         Type: b.type,
         Publisher: b.publisher,
-        Price: b.price,
-        Discount: b.discount,
-        Tax: b.tax,
-        "Final Price": b.finalPrice,
+        Price: safeNumber(b.price),
+        Discount: safeNumber(b.discount),
+        Tax: safeNumber(b.tax),
+        "Final Price": safeNumber(b.finalPrice),
       }))
     );
     const wb = XLSX.utils.book_new();
@@ -203,17 +242,20 @@ export default function DataExplorer() {
   };
 
   useEffect(() => {
-    fetchAllBooks();
+    if (user) {
+      fetchAllBooks();
+    }
   }, [firestore, user]);
 
   return (
     <main className="container py-8 space-y-8">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-4 border-b pb-4">
         <div className="flex items-center gap-3">
           <Database className="h-6 w-6 text-primary" />
           <h1 className="text-2xl font-bold">Book Data Manager</h1>
         </div>
-        <div className="flex gap-3 flex-wrap">
+        <div className="flex flex-wrap gap-3">
           <Button variant="destructive" onClick={handleDeleteAll}>
             <Trash2 className="h-4 w-4 mr-2" /> Delete All
           </Button>
@@ -245,55 +287,84 @@ export default function DataExplorer() {
         </div>
       </div>
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card><CardContent className="p-4"><h3>Total Books</h3><p className="text-2xl font-bold">{summary.totalBooks}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><h3>Total Value</h3><p className="text-2xl font-bold">{formatCurrency(summary.totalValue)}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><h3>Avg Discount</h3><p className="text-2xl font-bold">{summary.avgDiscount.toFixed(1)}%</p></CardContent></Card>
-        <Card><CardContent className="p-4"><h3>Avg Tax</h3><p className="text-2xl font-bold">{summary.avgTax.toFixed(1)}%</p></CardContent></Card>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <Card><CardContent className="p-4"><h3>Total Books</h3><p className="text-3xl font-bold">{summary.totalBooks}</p></CardContent></Card>
+        <Card><CardContent className="p-4"><h3>Total Value</h3><p className="text-3xl font-bold">{formatCurrency(summary.totalValue)}</p></CardContent></Card>
+        <Card><CardContent className="p-4"><h3>Avg Discount</h3><p className="text-3xl font-bold">{summary.avgDiscount.toFixed(1)}%</p></CardContent></Card>
+        <Card><CardContent className="p-4"><h3>Avg Tax</h3><p className="text-3xl font-bold">{summary.avgTax.toFixed(1)}%</p></CardContent></Card>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <MultiSelect options={classOptions} placeholder="Filter by Class" onValueChange={setFilterClasses} />
-        <MultiSelect options={courseOptions} placeholder="Filter by Course" onValueChange={setFilterCourses} />
-        <MultiSelect options={publisherOptions} placeholder="Filter by Publisher" onValueChange={setFilterPublishers} />
-      </div>
+      {/* Filters */}
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold text-muted-foreground">Filters</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <MultiSelect options={classOptions} placeholder="Filter by Class" onValueChange={setFilterClasses} />
+          <MultiSelect options={courseOptions} placeholder="Filter by Course" onValueChange={setFilterCourses} />
+          <MultiSelect options={publisherOptions} placeholder="Filter by Publisher" onValueChange={setFilterPublishers} />
+        </div>
+      </section>
 
+      {/* Charts or Table */}
       <AnimatePresence mode="wait">
         {viewMode === "chart" ? (
-          <motion.div key="chart" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <div className="grid lg:grid-cols-2 gap-6">
+          <motion.div
+            key="chart"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.3 }}
+          >
+            <div className="grid lg:grid-cols-2 gap-8">
+              {/* Cost by Class */}
               <Card>
                 <CardHeader><CardTitle>Cost by Class</CardTitle></CardHeader>
-                <CardContent className="h-[300px]">
+                <CardContent className="h-[320px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={filteredBooks.map((b) => ({ name: b.class, value: b.finalPrice }))}>
+                    <BarChart
+                      data={classChartData}
+                    >
                       <XAxis dataKey="name" />
                       <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="value" fill="#8884d8" />
+                      <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                      <Bar dataKey="value" fill="#4f46e5" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
               </Card>
 
+              {/* Cost by Publisher */}
               <Card>
                 <CardHeader><CardTitle>Cost by Publisher</CardTitle></CardHeader>
-                <CardContent className="h-[300px]">
+                <CardContent className="h-[320px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={filteredBooks.map((b) => ({ name: b.publisher, value: b.finalPrice }))} dataKey="value" nameKey="name" outerRadius={100} label>
-                        {filteredBooks.map((_, i) => (<Cell key={i} fill={COLORS[i % COLORS.length]} />))}
-                      </Pie>
-                      <Legend />
-                      <Tooltip />
-                    </PieChart>
+                    <BarChart
+                      data={publisherChartData}
+                    >
+                      <XAxis
+                        dataKey="name"
+                        interval={0}
+                        angle={-25}
+                        textAnchor="end"
+                        height={80}
+                      />
+                      <YAxis />
+                      <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                      <Bar dataKey="value" fill="#10b981" radius={[4, 4, 0, 0]} />
+                    </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
               </Card>
             </div>
           </motion.div>
         ) : (
-          <motion.div key="table" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <motion.div
+            key="table"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.3 }}
+          >
             <Card>
               <CardHeader><CardTitle>Filtered Books Table</CardTitle></CardHeader>
               <CardContent>
@@ -318,7 +389,7 @@ export default function DataExplorer() {
                       </TableHeader>
                       <TableBody>
                         {filteredBooks.map((b) => (
-                          <TableRow key={b.id}>
+                          <TableRow key={b.path}>
                             <TableCell>{b.class}</TableCell>
                             <TableCell>{b.courseCombination}</TableCell>
                             <TableCell>{b.bookName}</TableCell>
