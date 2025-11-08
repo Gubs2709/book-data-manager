@@ -34,7 +34,7 @@ import {
   BarChart2,
   Table as TableIcon,
 } from "lucide-react";
-import { toast } from "sonner";
+import { useToast } from "@/hooks/use-toast";
 import { MultiSelect } from "@/components/ui/multi-select";
 import {
   BarChart,
@@ -88,6 +88,8 @@ export default function DataExplorer() {
   const [filterCourses, setFilterCourses] = useState<string[]>([]);
   const [filterPublishers, setFilterPublishers] = useState<string[]>([]);
 
+  const { toast } = useToast();
+
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("en-IN", {
       style: "currency",
@@ -96,7 +98,7 @@ export default function DataExplorer() {
 
   // 🔄 Fetch all books (textbooks + notebooks)
   async function fetchAllBooks() {
-    if (!firestore) return;
+    if (!firestore || !user) return;
     setIsLoading(true);
     try {
       const [textbooksSnap, notebooksSnap] = await Promise.all([
@@ -123,9 +125,10 @@ export default function DataExplorer() {
       }));
 
       setBooks([...textbooks, ...notebooks]);
-      toast.success("Data loaded successfully!");
-    } catch {
-      toast.error("Error fetching data");
+      toast({ title: "Success", description: "Data loaded successfully!" });
+    } catch (err) {
+      console.error(err);
+      toast({ variant: "destructive", title: "Error", description: "Failed to fetch data." });
     } finally {
       setIsLoading(false);
     }
@@ -170,7 +173,7 @@ export default function DataExplorer() {
       return acc;
     }, {} as Record<string, number>);
   
-    return Object.entries(grouped).map(([name, value]) => ({ name, value }));
+    return sanitizeChartData(Object.entries(grouped).map(([name, value]) => ({ name, value })));
   }, [filteredBooks]);
   
   const publisherChartData = useMemo(() => {
@@ -184,14 +187,14 @@ export default function DataExplorer() {
       return acc;
     }, {} as Record<string, number>);
   
-    return Object.entries(grouped).map(([name, value]) => ({ name, value }));
+    return sanitizeChartData(Object.entries(grouped).map(([name, value]) => ({ name, value })));
   }, [filteredBooks]);
 
   // 🎚 Filter options
   const classOptions = Array.from(new Set(books.map((b) => b.class)))
     .filter(Boolean)
     .sort()
-    .map((cls) => ({ label: cls, value: cls }));
+    .map((cls) => ({ label: `Class ${cls}`, value: cls }));
 
   const courseOptions = Array.from(
     new Set(books.map((b) => b.courseCombination))
@@ -210,23 +213,34 @@ export default function DataExplorer() {
   // 🗑 Delete all entries
   async function handleDeleteAll() {
     if (!firestore) {
-      toast.error("Firestore not initialized.");
+      toast({ variant: "destructive", title: "Error", description: "Firestore not initialized." });
       return;
     }
-    if (!confirm("⚠️ Are you sure you want to delete ALL data?")) return;
+    if (!confirm("⚠️ Are you sure you want to delete ALL data? This action cannot be undone.")) return;
+    
+    setIsLoading(true);
     try {
-      await Promise.all(books.map((b) => deleteDoc(doc(firestore, b.path))));
-      setBooks([]);
-      toast.success("All data deleted successfully!");
-    } catch {
-      toast.error("Error deleting data");
+      // We use the original `books` array to ensure all documents are targeted for deletion
+      const deletePromises = books.map((b) => deleteDoc(doc(firestore, b.path)));
+      await Promise.all(deletePromises);
+      
+      setBooks([]); // Clear local state
+      toast({ title: "Success", description: "All data has been deleted."});
+    } catch(err) {
+      console.error(err);
+      toast({ variant: "destructive", title: "Error", description: "Failed to delete data." });
+    } finally {
+      setIsLoading(false);
     }
   }
 
   // 📥 Download
   const handleDownload = (filteredOnly = false) => {
     const data = filteredOnly ? filteredBooks : books;
-    if (data.length === 0) return toast.warning("No data to download!");
+    if (data.length === 0) {
+        toast({ variant: "destructive", title: "No Data", description: "There is no data to download." });
+        return;
+    }
 
     const ws = XLSX.utils.json_to_sheet(
       data.map((b) => ({
@@ -244,7 +258,7 @@ export default function DataExplorer() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Books");
     XLSX.writeFile(wb, filteredOnly ? "Filtered_Books.xlsx" : "All_Books.xlsx");
-    toast.success(`Downloaded ${filteredOnly ? "filtered" : "all"} data`);
+    toast({ title: "Success", description: `Downloaded ${filteredOnly ? "filtered" : "all"} data.` });
   };
 
   useEffect(() => {
@@ -262,17 +276,18 @@ export default function DataExplorer() {
           <h1 className="text-2xl font-bold">Book Data Manager</h1>
         </div>
         <div className="flex flex-wrap gap-3">
-          <Button variant="destructive" onClick={handleDeleteAll}>
+          <Button variant="destructive" onClick={handleDeleteAll} disabled={isLoading || books.length === 0}>
             <Trash2 className="h-4 w-4 mr-2" /> Delete All
           </Button>
-          <Button onClick={() => handleDownload(false)}>
+          <Button onClick={() => handleDownload(false)} disabled={isLoading || books.length === 0}>
             <Download className="h-4 w-4 mr-2" /> Download All
           </Button>
-          <Button variant="secondary" onClick={() => handleDownload(true)}>
+          <Button variant="secondary" onClick={() => handleDownload(true)} disabled={isLoading || filteredBooks.length === 0}>
             <Download className="h-4 w-4 mr-2" /> Download Filtered
           </Button>
-          <Button variant="outline" onClick={fetchAllBooks}>
-            <RefreshCw className="h-4 w-4 mr-2" /> Refresh
+          <Button variant="outline" onClick={fetchAllBooks} disabled={isLoading}>
+            {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+            Refresh
           </Button>
           <Button
             variant="secondary"
@@ -295,10 +310,10 @@ export default function DataExplorer() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card><CardContent className="p-4"><h3>Total Books</h3><p className="text-3xl font-bold">{summary.totalBooks}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><h3>Total Value</h3><p className="text-3xl font-bold">{formatCurrency(summary.totalValue)}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><h3>Avg Discount</h3><p className="text-3xl font-bold">{summary.avgDiscount.toFixed(1)}%</p></CardContent></Card>
-        <Card><CardContent className="p-4"><h3>Avg Tax</h3><p className="text-3xl font-bold">{summary.avgTax.toFixed(1)}%</p></CardContent></Card>
+        <Card><CardContent className="p-4"><h3 className="text-muted-foreground">Total Books</h3><p className="text-3xl font-bold">{summary.totalBooks}</p></CardContent></Card>
+        <Card><CardContent className="p-4"><h3 className="text-muted-foreground">Total Value</h3><p className="text-3xl font-bold">{formatCurrency(summary.totalValue)}</p></CardContent></Card>
+        <Card><CardContent className="p-4"><h3 className="text-muted-foreground">Avg Discount</h3><p className="text-3xl font-bold">{summary.avgDiscount.toFixed(1)}%</p></CardContent></Card>
+        <Card><CardContent className="p-4"><h3 className="text-muted-foreground">Avg Tax</h3><p className="text-3xl font-bold">{summary.avgTax.toFixed(1)}%</p></CardContent></Card>
       </div>
 
       {/* Filters */}
@@ -327,13 +342,11 @@ export default function DataExplorer() {
                 <CardHeader><CardTitle>Cost by Class</CardTitle></CardHeader>
                 <CardContent className="h-[320px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={classChartData}
-                    >
-                      <XAxis dataKey="name" />
-                      <YAxis />
+                    <BarChart data={classChartData}>
+                      <XAxis dataKey="name" stroke="#888888" fontSize={12} tickLine={false} axisLine={false}/>
+                      <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `₹${value}`}/>
                       <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                      <Bar dataKey="value" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -344,19 +357,11 @@ export default function DataExplorer() {
                 <CardHeader><CardTitle>Cost by Publisher</CardTitle></CardHeader>
                 <CardContent className="h-[320px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={publisherChartData}
-                    >
-                      <XAxis
-                        dataKey="name"
-                        interval={0}
-                        angle={-25}
-                        textAnchor="end"
-                        height={80}
-                      />
-                      <YAxis />
+                    <BarChart data={publisherChartData}>
+                      <XAxis dataKey="name" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} interval={0} angle={-25} textAnchor="end" height={80}/>
+                      <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `₹${value}`}/>
                       <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                      <Bar dataKey="value" fill="#10b981" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="value" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -375,11 +380,11 @@ export default function DataExplorer() {
               <CardHeader><CardTitle>Filtered Books Table</CardTitle></CardHeader>
               <CardContent>
                 {isLoading ? (
-                  <div className="text-center py-10 text-muted-foreground">
-                    <Loader2 className="animate-spin inline-block" /> Loading...
+                  <div className="text-center py-10 text-muted-foreground flex items-center justify-center">
+                    <Loader2 className="animate-spin h-5 w-5 mr-3" /> Loading...
                   </div>
                 ) : filteredBooks.length === 0 ? (
-                  <p className="text-center text-muted-foreground">No data found</p>
+                  <p className="text-center py-10 text-muted-foreground">No data found matching your filters.</p>
                 ) : (
                   <div className="overflow-x-auto border rounded-md">
                     <Table>
@@ -390,7 +395,7 @@ export default function DataExplorer() {
                           <TableHead>Book Name</TableHead>
                           <TableHead>Type</TableHead>
                           <TableHead>Publisher</TableHead>
-                          <TableHead>Final Price</TableHead>
+                          <TableHead className="text-right">Final Price</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -398,10 +403,10 @@ export default function DataExplorer() {
                           <TableRow key={b.path}>
                             <TableCell>{b.class}</TableCell>
                             <TableCell>{b.courseCombination}</TableCell>
-                            <TableCell>{b.bookName}</TableCell>
+                            <TableCell className="font-medium">{b.bookName}</TableCell>
                             <TableCell>{b.type}</TableCell>
                             <TableCell>{b.publisher}</TableCell>
-                            <TableCell>{formatCurrency(b.finalPrice || 0)}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(b.finalPrice || 0)}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
