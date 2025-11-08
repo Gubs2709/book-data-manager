@@ -98,15 +98,19 @@ service cloud.firestore {
 
       // Rules for the nested textbook and notebook collections
       match /textbooks/{textbookId} {
-         allow get, list, delete: if isOwnerByPath(userId);
+         allow get, delete: if isOwnerByPath(userId);
          allow create: if isOwnerByPath(userId) && isOwnerByField() && request.resource.data.uploadId == uploadId;
          allow update: if isOwnerByPath(userId) && isOwnerByField() && request.resource.data.uploadId == uploadId;
+         // List is handled by the collectionGroup rule below.
+         allow list: if false;
       }
 
       match /notebooks/{notebookId} {
-         allow get, list, delete: if isOwnerByPath(userId);
+         allow get, delete: if isOwnerByPath(userId);
          allow create: if isOwnerByPath(userId) && isOwnerByField() && request.resource.data.uploadId == uploadId;
          allow update: if isOwnerByPath(userId) && isOwnerByField() && request.resource.data.uploadId == uploadId;
+         // List is handled by the collectionGroup rule below.
+         allow list: if false;
       }
     }
     
@@ -117,7 +121,7 @@ service cloud.firestore {
      * @principle Allows a user to list only their own textbooks across all uploads, secured by a 'userId' field check.
      */
     match /{path=**}/textbooks/{textbookId} {
-      allow list: if isSignedIn() && request.query.filters.size() == 1 && request.query.filters[0].field.stringValue() == 'userId' && request.query.filters[0].op.stringValue() == '==' && request.query.filters[0].value.stringValue() == request.auth.uid;
+      allow list: if isSignedIn() && request.query.get("userId") == request.auth.uid;
     }
 
     /**
@@ -127,7 +131,7 @@ service cloud.firestore {
      * @principle Allows a user to list only their own notebooks across all uploads, secured by a 'userId' field check.
      */
      match /{path=**}/notebooks/{notebookId} {
-      allow list: if isSignedIn() && request.query.filters.size() == 1 && request.query.filters[0].field.stringValue() == 'userId' && request.query.filters[0].op.stringValue() == '==' && request.query.filters[0].value.stringValue() == request.auth.uid;
+      allow list: if isSignedIn() && request.query.get("userId") == request.auth.uid;
     }
 
     /**
