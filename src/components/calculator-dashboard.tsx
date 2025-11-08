@@ -626,15 +626,25 @@ export default function CalculatorDashboard() {
                                     {bulkSelectedBooks.length > 0 ? bulkSelectedBooks.map(book => (
                                         <Badge key={book} variant="secondary" className="mr-1">
                                             {book}
-                                            <button
+                                            <div
+                                                role="button"
+                                                tabIndex={0}
                                                 className="ml-1 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
                                                 onClick={(e) => {
+                                                    e.preventDefault();
                                                     e.stopPropagation();
                                                     setBulkSelectedBooks(bulkSelectedBooks.filter(b => b !== book));
                                                 }}
+                                                onKeyDown={(e) => {
+                                                  if (e.key === 'Enter' || e.key === ' ') {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    setBulkSelectedBooks(bulkSelectedBooks.filter(b => b !== book));
+                                                  }
+                                                }}
                                             >
                                                 <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                                            </button>
+                                            </div>
                                         </Badge>
                                     )) : "Select books..."}
                                 </div>
@@ -761,3 +771,5 @@ export default function CalculatorDashboard() {
     </>
   );
 }
+
+    
