@@ -70,13 +70,16 @@ export default function CalculatorDashboard() {
     setNotebooks([]);
   }
   
-  const handleUpdateBook = (table: 'textbooks' | 'notebooks', bookId: number, field: keyof Book, value: number) => {
+  const handleUpdateBook = (table: 'textbooks' | 'notebooks', bookId: number, field: keyof Omit<Book, 'id' | 'subject' | 'price' | 'finalPrice'>, value: string | number) => {
     const updater = table === 'textbooks' ? setTextbooks : setNotebooks;
     updater(prevBooks =>
       prevBooks.map(book => {
         if (book.id === bookId) {
           const updatedBook = { ...book, [field]: value };
-          return { ...updatedBook, finalPrice: calculateFinalPrice(updatedBook) };
+          if (field !== 'bookName') {
+            return { ...updatedBook, finalPrice: calculateFinalPrice(updatedBook) };
+          }
+          return updatedBook;
         }
         return book;
       })
@@ -119,9 +122,9 @@ export default function CalculatorDashboard() {
       <main className="container flex-grow py-8">
         {!isDataLoaded ? (
           <div className="mx-auto max-w-2xl animate-in fade-in-50 duration-500">
-            <Card>
+            <Card className="shadow-lg">
               <CardHeader>
-                <CardTitle className="text-2xl">Setup Calculation</CardTitle>
+                <CardTitle className="text-2xl font-bold tracking-tight text-primary">Setup Calculation</CardTitle>
                 <CardDescription>
                   Enter metadata and default values before processing the book list. 
                   This simulates uploading and processing an Excel file.
@@ -149,8 +152,8 @@ export default function CalculatorDashboard() {
                 </div>
                 <Separator />
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                  <div className="space-y-4 rounded-lg border bg-card p-4">
-                    <h3 className="font-semibold">Textbooks</h3>
+                  <div className="space-y-4 rounded-lg border bg-card p-4 shadow-sm">
+                    <h3 className="font-semibold text-primary">Textbooks</h3>
                     <div className="space-y-2">
                       <Label htmlFor="tb-discount">Default Discount (%)</Label>
                       <Input id="tb-discount" type="number" value={initialTextbookDiscount} onChange={(e) => setInitialTextbookDiscount(parseFloat(e.target.value) || 0)} />
@@ -160,8 +163,8 @@ export default function CalculatorDashboard() {
                       <Input id="tb-tax" type="number" value={initialTextbookTax} onChange={(e) => setInitialTextbookTax(parseFloat(e.target.value) || 0)} />
                     </div>
                   </div>
-                  <div className="space-y-4 rounded-lg border bg-card p-4">
-                    <h3 className="font-semibold">Notebooks</h3>
+                  <div className="space-y-4 rounded-lg border bg-card p-4 shadow-sm">
+                    <h3 className="font-semibold text-primary">Notebooks</h3>
                     <div className="space-y-2">
                       <Label htmlFor="nb-discount">Default Discount (%)</Label>
                       <Input id="nb-discount" type="number" value={initialNotebookDiscount} onChange={(e) => setInitialNotebookDiscount(parseFloat(e.target.value) || 0)} />
@@ -174,7 +177,7 @@ export default function CalculatorDashboard() {
                 </div>
               </CardContent>
               <CardFooter>
-                <Button size="lg" className="w-full" onClick={handleProcessUpload}>
+                <Button size="lg" className="w-full font-bold" onClick={handleProcessUpload}>
                   <FileUp className="mr-2 h-4 w-4" /> Mock Upload & Process
                 </Button>
               </CardFooter>
@@ -182,7 +185,7 @@ export default function CalculatorDashboard() {
           </div>
         ) : (
           <div className="space-y-8 animate-in fade-in-50 duration-500">
-             <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:items-start">
+             <div className="space-y-8">
                <BookTable
                  title="Textbooks"
                  description="List of textbooks for the selected class."
@@ -197,6 +200,26 @@ export default function CalculatorDashboard() {
                  onBookUpdate={(id, field, value) => handleUpdateBook('notebooks', id, field, value)}
                  onApplyAll={(field, value) => handleApplyAll('notebooks', field, value)}
                />
+               <Card className="shadow-lg">
+                <CardHeader>
+                    <CardTitle>Calculation Summary</CardTitle>
+                    <CardDescription>A summary of the calculated totals.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-4 sm:grid-cols-3">
+                    <div className="flex flex-col space-y-1.5 rounded-lg border bg-secondary/50 p-4">
+                        <Label>Textbooks Total</Label>
+                        <p className="text-2xl font-bold">{formatCurrency(totals.textbookTotal)}</p>
+                    </div>
+                    <div className="flex flex-col space-y-1.5 rounded-lg border bg-secondary/50 p-4">
+                        <Label>Notebooks Total</Label>
+                        <p className="text-2xl font-bold">{formatCurrency(totals.notebookTotal)}</p>
+                    </div>
+                    <div className="flex flex-col space-y-1.5 rounded-lg border bg-primary/10 p-4">
+                        <Label className="text-primary">Grand Total</Label>
+                        <p className="text-2xl font-bold text-primary">{formatCurrency(totals.grandTotal)}</p>
+                    </div>
+                </CardContent>
+               </Card>
              </div>
           </div>
         )}
@@ -206,14 +229,6 @@ export default function CalculatorDashboard() {
         <footer className="sticky bottom-0 z-40 mt-auto border-t bg-background/95 py-4 backdrop-blur-sm">
           <div className="container flex flex-col items-center justify-between gap-4 md:flex-row">
             <div className="flex flex-wrap items-center justify-center gap-4 text-sm md:gap-6 md:text-base">
-                <div className="flex items-baseline gap-2">
-                    <span className="text-muted-foreground">Textbooks:</span>
-                    <span className="font-bold">{formatCurrency(totals.textbookTotal)}</span>
-                </div>
-                <div className="flex items-baseline gap-2">
-                    <span className="text-muted-foreground">Notebooks:</span>
-                    <span className="font-bold">{formatCurrency(totals.notebookTotal)}</span>
-                </div>
                  <div className="flex items-baseline gap-2">
                     <Calculator className="h-5 w-5 text-muted-foreground"/>
                     <span className="text-muted-foreground">Grand Total:</span>

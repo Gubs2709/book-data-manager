@@ -24,7 +24,7 @@ interface BookTableProps {
   title: string;
   description: string;
   books: Book[];
-  onBookUpdate: (bookId: number, field: "price" | "discount" | "tax", value: number) => void;
+  onBookUpdate: (bookId: number, field: "bookName" | "price" | "discount" | "tax", value: string | number) => void;
   onApplyAll: (field: "discount" | "tax", value: number) => void;
 }
 
@@ -46,9 +46,9 @@ export function BookTable({
   };
 
   return (
-    <Card className="flex h-full flex-col">
+    <Card className="flex h-full flex-col shadow-lg">
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle className="text-primary">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
         <div className="mt-4 flex flex-col space-y-4 sm:flex-row sm:space-y-0 sm:space-x-4">
           <div className="flex items-center space-x-2">
@@ -84,18 +84,27 @@ export function BookTable({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[200px]">Book Name</TableHead>
-                <TableHead>Subject</TableHead>
-                <TableHead className="text-right">Price</TableHead>
-                <TableHead className="w-[120px] text-right">Discount (%)</TableHead>
-                <TableHead className="w-[120px] text-right">Tax (%)</TableHead>
-                <TableHead className="text-right">Final Price</TableHead>
+                <TableHead className="min-w-[250px] font-semibold">Book Name</TableHead>
+                <TableHead className="font-semibold">Subject</TableHead>
+                <TableHead className="text-right font-semibold">Price</TableHead>
+                <TableHead className="w-[120px] text-right font-semibold">Discount (%)</TableHead>
+                <TableHead className="w-[120px] text-right font-semibold">Tax (%)</TableHead>
+                <TableHead className="text-right font-semibold">Final Price</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {books.map((book) => (
                 <TableRow key={book.id}>
-                  <TableCell className="font-medium">{book.bookName}</TableCell>
+                  <TableCell>
+                    <Input
+                      value={book.bookName}
+                      onChange={(e) =>
+                        onBookUpdate(book.id, "bookName", e.target.value)
+                      }
+                      className="font-medium"
+                      aria-label={`Book name for ${book.bookName}`}
+                    />
+                  </TableCell>
                   <TableCell>{book.subject}</TableCell>
                   <TableCell className="text-right">
                     {formatCurrency(book.price)}
@@ -122,7 +131,7 @@ export function BookTable({
                       aria-label={`Tax for ${book.bookName}`}
                     />
                   </TableCell>
-                  <TableCell className="text-right font-semibold">
+                  <TableCell className="text-right font-semibold text-primary">
                     {formatCurrency(book.finalPrice)}
                   </TableCell>
                 </TableRow>
