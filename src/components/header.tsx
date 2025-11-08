@@ -13,19 +13,25 @@ import {
 import { PlaceHolderImages } from "@/lib/placeholder-images";
 import { BookOpenCheck, LogOut, User as UserIcon, LogIn } from "lucide-react";
 import { useUser, useAuth } from "@/firebase";
-import { initiateAnonymousSignIn } from "@/firebase/non-blocking-login";
-import { signOut } from "firebase/auth";
+import { GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
 
 export default function Header() {
   const userAvatar = PlaceHolderImages.find(p => p.id === 'user-avatar');
   const { user, isUserLoading } = useUser();
   const auth = useAuth();
 
-  const handleLogin = () => {
-    initiateAnonymousSignIn(auth);
+  const handleGoogleSignIn = async () => {
+    if (!auth) return;
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (error) {
+      console.error("Error signing in with Google: ", error);
+    }
   };
 
   const handleLogout = () => {
+    if (!auth) return;
     signOut(auth);
   };
 
@@ -53,16 +59,16 @@ export default function Header() {
                   >
                     <Avatar className="h-9 w-9">
                       {user.photoURL ? <AvatarImage src={user.photoURL} alt="User Avatar" /> : (userAvatar && <AvatarImage src={userAvatar.imageUrl} data-ai-hint={userAvatar.imageHint} alt="User Avatar" />) }
-                      <AvatarFallback>{user.isAnonymous ? 'A' : (user.email?.charAt(0).toUpperCase() || 'U')}</AvatarFallback>
+                      <AvatarFallback>{user.isAnonymous ? 'A' : (user.displayName?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || 'U')}</AvatarFallback>
                     </Avatar>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="w-56" align="end" forceMount>
                   <DropdownMenuLabel className="font-normal">
                     <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium leading-none">{user.isAnonymous ? "Anonymous User" : (user.displayName || "Demo User")}</p>
+                      <p className="text-sm font-medium leading-none">{user.displayName || "User"}</p>
                       <p className="text-xs leading-none text-muted-foreground">
-                        {user.isAnonymous ? `ID: ${user.uid.substring(0,8)}...` : user.email}
+                        {user.email}
                       </p>
                     </div>
                   </DropdownMenuLabel>
@@ -79,9 +85,9 @@ export default function Header() {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-               <Button onClick={handleLogin}>
+               <Button onClick={handleGoogleSignIn}>
                   <LogIn className="mr-2 h-4 w-4" />
-                  Sign In
+                  Sign In with Google
               </Button>
             )}
         </div>
