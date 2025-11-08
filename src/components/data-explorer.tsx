@@ -31,18 +31,18 @@ export default function DataExplorer() {
   );
   const { data: uploads, isLoading: uploadsLoading } = useCollection<Upload>(uploadsQuery);
 
-  const allBooksQuery = useMemoFirebase(
-    () => (user && firestore ? query(collectionGroup(firestore, 'frequent_book_data')) : null),
+  const frequentBookDataQuery = useMemoFirebase(
+    () => (user && firestore ? collection(firestore, 'users', user.uid, 'frequent_book_data') : null),
     [firestore, user]
   );
-  const { data: allBooks, isLoading: booksLoading } = useCollection<FrequentBookData>(allBooksQuery);
+  const { data: allBooks, isLoading: booksLoading } = useCollection<FrequentBookData>(frequentBookDataQuery);
   
 
   const enrichedBooks = useMemo(() => {
     if (!allBooks || !uploads) return [];
   
     const userUploads = uploads.filter(u => u.userId === user?.uid);
-    const userBooks = allBooks.filter(b => b.userId === user?.uid);
+    const userBooks = allBooks;
   
     const uploadMap = new Map(userUploads.map(u => [u.id, u]));
   
