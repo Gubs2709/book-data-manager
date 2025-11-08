@@ -1,10 +1,10 @@
 
 'use client';
 
-import { useState, useMemo } from 'react';
-import { useFirebase, useUser, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, collectionGroup } from 'firebase/firestore';
-import type { Upload, FrequentBookData } from '@/lib/types';
+import { useState, useMemo, useEffect } from 'react';
+import { useFirebase, useUser, useMemoFirebase } from '@/firebase';
+import { collection, getDocs, query, collectionGroup, where, Query } from 'firebase/firestore';
+import type { Upload, Book, BookType } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -12,11 +12,13 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 
-type EnrichedBookData = FrequentBookData & {
-    uploadClass?: string;
-    uploadCourse?: string;
-    uploadTimestamp?: Date;
-  };
+type EnrichedBook = Book & {
+    uploadId: string;
+    class: string;
+    courseCombination: string;
+    uploadTimestamp: Date;
+    type: BookType;
+};
 
 export default function DataExplorer() {
   const { firestore } = useFirebase();
@@ -24,49 +26,88 @@ export default function DataExplorer() {
 
   const [classFilter, setClassFilter] = useState<string>('all');
   const [publisherFilter, setPublisherFilter] = useState<string>('');
+  const [bookTypeFilter, setBookTypeFilter] = useState<BookType | 'all'>('all');
+  const [allBooks, setAllBooks] = useState<EnrichedBook[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const uploadsQuery = useMemoFirebase(
     () => (user && firestore ? collection(firestore, 'users', user.uid, 'uploads') : null),
     [firestore, user]
   );
-  const { data: uploads, isLoading: uploadsLoading } = useCollection<Upload>(uploadsQuery);
+  
+  useEffect(() => {
+    async function fetchAllBooks() {
+        if (!user || !firestore || !uploadsQuery) {
+            setIsLoading(false);
+            return;
+        }
 
-  const frequentBookDataQuery = useMemoFirebase(
-    () => (user && firestore ? collection(firestore, 'users', user.uid, 'frequent_book_data') : null),
-    [firestore, user]
-  );
-  const { data: allBooks, isLoading: booksLoading } = useCollection<FrequentBookData>(frequentBookDataQuery);
-  
+        setIsLoading(true);
+        const enrichedBooks: EnrichedBook[] = [];
 
-  const enrichedBooks = useMemo(() => {
-    if (!allBooks || !uploads) return [];
-  
-    const userUploads = uploads.filter(u => u.userId === user?.uid);
-    const userBooks = allBooks;
-  
-    const uploadMap = new Map(userUploads.map(u => [u.id, u]));
-  
-    // This part is tricky because frequent_book_data isn't directly linked to an upload.
-    // For this example, we'll just display the frequent book data as is.
-    // A more complex schema would be needed to link them properly.
-    
-    return userBooks;
+        try {
+            const uploadSnapshots = await getDocs(uploadsQuery);
+            const uploads = uploadSnapshots.docs.map(doc => ({ id: doc.id, ...doc.data() } as Upload));
 
-  }, [allBooks, uploads, user?.uid]);
+            for (const upload of uploads) {
+                const textbooksRef = collection(firestore, 'users', user.uid, 'uploads', upload.id, 'textbooks');
+                const notebooksRef = collection(firestore, 'users', user.uid, 'uploads', upload.id, 'notebooks');
+
+                const textbookSnap = await getDocs(textbooksRef);
+                textbookSnap.forEach(doc => {
+                    const bookData = doc.data() as Book;
+                    enrichedBooks.push({
+                        ...bookData,
+                        id: doc.id,
+                        uploadId: upload.id,
+                        class: upload.class,
+                        courseCombination: upload.courseCombination,
+                        uploadTimestamp: upload.uploadTimestamp.toDate(),
+                        type: 'Textbook'
+                    });
+                });
+                
+                const notebookSnap = await getDocs(notebooksRef);
+                notebookSnap.forEach(doc => {
+                    const bookData = doc.data() as Book;
+                    enrichedBooks.push({
+                        ...bookData,
+                        id: doc.id,
+                        uploadId: upload.id,
+                        class: upload.class,
+                        courseCombination: upload.courseCombination,
+                        uploadTimestamp: upload.uploadTimestamp.toDate(),
+                        type: 'Notebook'
+                    });
+                });
+            }
+            setAllBooks(enrichedBooks);
+        } catch (error) {
+            console.error("Error fetching all book data:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    fetchAllBooks();
+  }, [user, firestore, uploadsQuery]);
+
 
   const filteredBooks = useMemo(() => {
-    return enrichedBooks
+    return allBooks
       .filter(book => {
-        // Since we don't have a class on the book directly, we can't filter by it.
-        // This is a limitation of the current schema.
-        // For now, class filter will not work as intended.
-        return true;
+        if (classFilter === 'all') return true;
+        return book.class === classFilter;
       })
       .filter(book => {
         if (!publisherFilter) return true;
         return book.publisher.toLowerCase().includes(publisherFilter.toLowerCase());
+      })
+      .filter(book => {
+          if (bookTypeFilter === 'all') return true;
+          return book.type === bookTypeFilter;
       });
-  }, [enrichedBooks, classFilter, publisherFilter]);
+  }, [allBooks, classFilter, publisherFilter, bookTypeFilter]);
 
   const allPublishers = useMemo(() => {
     if (!allBooks) return [];
@@ -75,12 +116,10 @@ export default function DataExplorer() {
   }, [allBooks]);
 
   const allClasses = useMemo(() => {
-    if (!uploads) return [];
-    const classes = uploads.map(u => u.class);
+    if (!allBooks) return [];
+    const classes = allBooks.map(u => u.class);
     return [...new Set(classes)].filter(Boolean).sort((a,b) => parseInt(a) - parseInt(b));
-  }, [uploads]);
-
-  const isLoading = uploadsLoading || booksLoading;
+  }, [allBooks]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("en-IN", {
@@ -94,9 +133,9 @@ export default function DataExplorer() {
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="text-2xl font-bold tracking-tight text-primary">Data Explorer</CardTitle>
-          <CardDescription>View and filter all your saved book data.</CardDescription>
+          <CardDescription>View and filter all your saved book data from previous uploads.</CardDescription>
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Select onValueChange={setClassFilter} defaultValue="all" disabled>
+            <Select onValueChange={setClassFilter} defaultValue="all">
               <SelectTrigger>
                 <SelectValue placeholder="Filter by Class" />
               </SelectTrigger>
@@ -110,16 +149,25 @@ export default function DataExplorer() {
                 value={publisherFilter}
                 onChange={e => setPublisherFilter(e.target.value)}
             />
+            <Select onValueChange={(value) => setBookTypeFilter(value as BookType | 'all')} defaultValue="all">
+                <SelectTrigger>
+                    <SelectValue placeholder="Filter by Type" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="Textbook">Textbooks</SelectItem>
+                    <SelectItem value="Notebook">Notebooks</SelectItem>
+                </SelectContent>
+            </Select>
           </div>
-           <p className="text-xs text-muted-foreground mt-2">
-            Note: Class filtering is disabled due to the current data structure. All saved frequent book data is displayed.
-           </p>
         </CardHeader>
         <CardContent>
           <div className="relative overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Class</TableHead>
+                  <TableHead>Course</TableHead>
                   <TableHead>Book Name</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Publisher</TableHead>
@@ -133,12 +181,14 @@ export default function DataExplorer() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={7} className="h-12 text-center">Loading...</TableCell>
+                      <TableCell colSpan={9} className="h-12 text-center">Loading...</TableCell>
                     </TableRow>
                   ))
                 ) : filteredBooks.length > 0 ? (
                   filteredBooks.map((book) => (
                     <TableRow key={book.id}>
+                      <TableCell>{book.class}</TableCell>
+                      <TableCell>{book.courseCombination}</TableCell>
                       <TableCell className="font-medium">{book.bookName}</TableCell>
                       <TableCell>
                         <Badge variant={book.type === 'Textbook' ? 'default' : 'secondary'}>
@@ -154,7 +204,7 @@ export default function DataExplorer() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
+                    <TableCell colSpan={9} className="h-24 text-center">
                       No data found. Start by using the Price Calculator.
                     </TableCell>
                   </TableRow>
