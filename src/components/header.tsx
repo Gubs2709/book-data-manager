@@ -13,22 +13,13 @@ import {
 import { PlaceHolderImages } from "@/lib/placeholder-images";
 import { BookOpenCheck, LogOut, User as UserIcon, LogIn } from "lucide-react";
 import { useUser, useAuth } from "@/firebase";
-import { GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
+import { signOut } from "firebase/auth";
+import Link from 'next/link';
 
 export default function Header() {
   const userAvatar = PlaceHolderImages.find(p => p.id === 'user-avatar');
   const { user, isUserLoading } = useUser();
   const auth = useAuth();
-
-  const handleGoogleSignIn = async () => {
-    if (!auth) return;
-    const provider = new GoogleAuthProvider();
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Error signing in with Google: ", error);
-    }
-  };
 
   const handleLogout = () => {
     if (!auth) return;
@@ -85,9 +76,11 @@ export default function Header() {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-               <Button onClick={handleGoogleSignIn}>
-                  <LogIn className="mr-2 h-4 w-4" />
-                  Sign In with Google
+               <Button asChild>
+                  <Link href="/login">
+                    <LogIn className="mr-2 h-4 w-4" />
+                    Sign In
+                  </Link>
               </Button>
             )}
         </div>

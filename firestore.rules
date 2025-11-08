@@ -3,18 +3,8 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow users to read and write their own data.
-    match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // Secure collection group queries by requiring a userId filter.
-    match /{path=**}/textbooks/{textbookId} {
-      allow list: if request.auth != null && request.query.where.userId == request.auth.uid;
-    }
-
-    match /{path=**}/notebooks/{notebookId} {
-      allow list: if request.auth != null && request.query.where.userId == request.auth.uid;
+    match /{document=**} {
+      allow read, write: if request.auth != null;
     }
   }
 }
