@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef } from "react";
 import type { Book, FrequentBookData, BookType, BookFilters, Upload, DenormalizedBook } from "@/lib/types";
 import { TEXTBOOKS_MOCK, NOTEBOOKS_MOCK } from "@/lib/data";
 import { BookTable } from "./book-table";
@@ -13,31 +13,25 @@ import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { FileUp, Save, GraduationCap, BookOpen, Calculator, Undo2, Download } from "lucide-react";
+import { FileUp, Save, GraduationCap } from "lucide-react";
 import { Separator } from "./ui/separator";
 import * as XLSX from "xlsx";
 import { useToast } from "@/hooks/use-toast";
 import { useFirebase, useUser, useCollection, useMemoFirebase } from "@/firebase";
 import { collection, doc, writeBatch, serverTimestamp } from "firebase/firestore";
-import { addDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates";
+import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates";
 
-// 🔹 Cleans data before writing to Firestore
+// 🧹 Clean data before Firestore
 function cleanFirestoreData<T extends Record<string, any>>(data: T): T {
   const cleaned: Record<string, any> = {};
   for (const key in data) {
-    if (
-      Object.hasOwn(data, key) &&
-      data[key] !== undefined &&
-      data[key] !== null &&
-      !Number.isNaN(data[key])
-    ) {
-      cleaned[key] = data[key];
-    }
+    const val = data[key];
+    if (val !== undefined && val !== null && !Number.isNaN(val)) cleaned[key] = val;
   }
   return cleaned as T;
 }
 
-// 🔹 ID generator
+// 🔑 Book ID generator
 function createBookId(book: Partial<Book>, type: BookType): string {
   let id = `${book.bookName}-${book.publisher}-${type}`;
   if (type === "Notebook" && book.pages) id += `-${book.pages}`;
@@ -47,7 +41,6 @@ function createBookId(book: Partial<Book>, type: BookType): string {
 const initialFilters: BookFilters = { bookName: "", subject: "", publisher: "" };
 
 export default function CalculatorDashboard() {
-  // React hooks – stable order always
   const [textbooks, setTextbooks] = useState<Book[]>([]);
   const [notebooks, setNotebooks] = useState<Book[]>([]);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
@@ -66,23 +59,11 @@ export default function CalculatorDashboard() {
   const { firestore } = useFirebase();
   const { user } = useUser();
 
-  // Always runs hooks safely
   const frequentBookDataQuery = useMemoFirebase(
     () => (user && firestore ? collection(firestore, "users", user.uid, "frequent_book_data") : null),
     [firestore, user]
   );
   const { data: frequentBookData } = useCollection<FrequentBookData>(frequentBookDataQuery);
-
-  const frequentBookDataMap = useMemo(() => {
-    const map = new Map<string, FrequentBookData>();
-    if (frequentBookData) {
-      for (const item of frequentBookData) {
-        const key = createBookId(item, item.type);
-        map.set(key, item);
-      }
-    }
-    return map;
-  }, [frequentBookData]);
 
   const calculateFinalPrice = (book: Omit<Book, "finalPrice" | "id" | "uploadId">): number => {
     const priceAfterDiscount = (book.price || 0) * (1 - (book.discount || 0) / 100);
@@ -120,14 +101,14 @@ export default function CalculatorDashboard() {
     const uploadId = await createNewUploadRecord();
     if (!uploadId) return;
 
-    const applyDefaults = (books: Omit<Book, "uploadId">[], discount: number, tax: number) =>
+    const applyDefaults = (books: Omit<Book, "uploadId">[], discount: number, tax: number, type: BookType) =>
       books.map((book) => {
-        const b = { ...book, discount, tax, uploadId };
-        return { ...b, finalPrice: calculateFinalPrice(b) };
+        const newBook = { ...book, discount, tax, uploadId, type };
+        return { ...newBook, finalPrice: calculateFinalPrice(newBook) };
       });
 
-    setTextbooks(applyDefaults(textbookData, initialTextbookDiscount, initialTextbookTax));
-    setNotebooks(applyDefaults(notebookData, initialNotebookDiscount, initialNotebookTax));
+    setTextbooks(applyDefaults(textbookData, initialTextbookDiscount, initialTextbookTax, "Textbook"));
+    setNotebooks(applyDefaults(notebookData, initialNotebookDiscount, initialNotebookTax, "Notebook"));
     setIsDataLoaded(true);
   };
 
@@ -143,10 +124,8 @@ export default function CalculatorDashboard() {
         const textbookSheet = workbook.Sheets["Textbooks"];
         const notebookSheet = workbook.Sheets["Notebooks"];
 
-        if (!textbookSheet && !notebookSheet)
-          throw new Error("Excel must contain 'Textbooks' and/or 'Notebooks' sheets.");
-
         const parseSheet = (sheet: XLSX.WorkSheet): Omit<Book, "uploadId">[] => {
+          if (!sheet) return [];
           const json = XLSX.utils.sheet_to_json<any>(sheet);
           return json.map((row, index) => ({
             id: row.id || index + 1,
@@ -161,8 +140,8 @@ export default function CalculatorDashboard() {
           }));
         };
 
-        const textbooks = textbookSheet ? parseSheet(textbookSheet) : [];
-        const notebooks = notebookSheet ? parseSheet(notebookSheet) : [];
+        const textbooks = parseSheet(textbookSheet);
+        const notebooks = parseSheet(notebookSheet);
         await processAndLoadData(textbooks, notebooks);
       } catch (err: any) {
         toast({ variant: "destructive", title: "Error", description: err.message });
@@ -184,49 +163,47 @@ export default function CalculatorDashboard() {
     const batch = writeBatch(firestore);
     const timestamp = serverTimestamp();
 
-    const allBooks = [...textbooks, ...notebooks];
-    const processed = new Set<string>();
+    const saveBooks = (books: Book[], type: BookType, subcollection: string) => {
+      books.forEach((book) => {
+        const bookRef = doc(collection(firestore, "users", user.uid, "uploads", currentUploadId, subcollection));
+        const data: DenormalizedBook = cleanFirestoreData({
+          ...book,
+          id: bookRef.id,
+          type,
+          uploadId: currentUploadId,
+          class: className,
+          courseCombination: course,
+          uploadTimestamp: timestamp,
+        });
+        batch.set(bookRef, data);
 
-    allBooks.forEach((book) => {
-      const type = textbooks.some((b) => b.id === book.id) ? "Textbook" : "Notebook";
-      const id = createBookId(book, type);
-      if (!id || processed.has(id)) return;
-
-      const ref = doc(firestore, "users", user.uid, "frequent_book_data", id);
-      const data = cleanFirestoreData({
-        userId: user.uid,
-        bookName: book.bookName || "Untitled",
-        publisher: book.publisher || "N/A",
-        price: Number(book.price) || 0,
-        discount: Number(book.discount) || 0,
-        tax: Number(book.tax) || 0,
-        class: className,
-        courseCombination: course,
-        type,
-        ...(type === "Notebook" && { pages: book.pages ?? null }),
+        // Also update frequent_book_data
+        const frequentRef = doc(firestore, "users", user.uid, "frequent_book_data", createBookId(book, type));
+        batch.set(
+          frequentRef,
+          cleanFirestoreData({
+            userId: user.uid,
+            bookName: book.bookName,
+            publisher: book.publisher,
+            price: Number(book.price) || 0,
+            discount: Number(book.discount) || 0,
+            tax: Number(book.tax) || 0,
+            class: className,
+            courseCombination: course,
+            type,
+            ...(type === "Notebook" && { pages: book.pages ?? null }),
+          }),
+          { merge: true }
+        );
       });
-      batch.set(ref, data, { merge: true });
-      processed.add(id);
-    });
+    };
 
-    // Save each book under upload
-    [...textbooks, ...notebooks].forEach((book) => {
-      const type = textbooks.includes(book) ? "textbooks" : "notebooks";
-      const ref = doc(collection(firestore, "users", user.uid, "uploads", currentUploadId, type));
-      const data = cleanFirestoreData({
-        ...book,
-        id: ref.id,
-        uploadId: currentUploadId,
-        class: className,
-        courseCombination: course,
-        uploadTimestamp: timestamp,
-      });
-      batch.set(ref, data);
-    });
+    saveBooks(textbooks, "Textbook", "textbooks");
+    saveBooks(notebooks, "Notebook", "notebooks");
 
     try {
       await batch.commit();
-      toast({ title: "Saved", description: "Books saved successfully with class and course." });
+      toast({ title: "Success", description: "Books saved successfully." });
     } catch (err) {
       console.error(err);
       toast({ variant: "destructive", title: "Error", description: "Failed to save." });
@@ -257,7 +234,11 @@ export default function CalculatorDashboard() {
                   <Select value={className} onValueChange={setClassName}>
                     <SelectTrigger><SelectValue placeholder="Select Class" /></SelectTrigger>
                     <SelectContent>
-                      {Array.from({ length: 12 }, (_, i) => <SelectItem key={i+1} value={`${i+1}`}>Class {i+1}</SelectItem>)}
+                      {Array.from({ length: 12 }, (_, i) => (
+                        <SelectItem key={i + 1} value={`${i + 1}`}>
+                          Class {i + 1}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
