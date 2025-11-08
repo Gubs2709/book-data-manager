@@ -142,9 +142,7 @@ service cloud.firestore {
      * @principle Enforces user-based ownership for frequent book data.
      */
     match /users/{userId}/frequent_book_data/{frequentBookDataId} {
-      allow get, list, delete: if isOwnerByPath(userId);
-      allow create: if isOwnerByPath(userId) && request.resource.data.userId == userId;
-      allow update: if isOwnerByPath(userId) && request.resource.data.userId == resource.data.userId;
+      allow read, write: if isOwnerByPath(userId);
     }
   }
 }
