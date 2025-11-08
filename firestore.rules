@@ -1,0 +1,133 @@
+/**
+ * @fileoverview Firestore Security Rules for Textbook and Notebook Management.
+ *
+ * Core Philosophy:
+ * This ruleset enforces a strict user-ownership model for all data. Each user can only access
+ * their own data, which is organized under their unique user ID.  The rules are designed to
+ * prevent unauthorized access and maintain data integrity.
+ *
+ * Data Structure:
+ * - /users/{userId}: Stores user profile information.
+ * - /users/{userId}/uploads/{uploadId}: Stores metadata about uploads, including class, course, and default discounts/taxes.
+ * - /users/{userId}/uploads/{uploadId}/textbooks/{textbookId}: Stores textbook data associated with an upload.
+ * - /users/{userId}/uploads/{uploadId}/notebooks/{notebookId}: Stores notebook data associated with an upload.
+ * - /users/{userId}/frequent_book_data/{frequentBookDataId}: Stores frequently used book data like discount and tax for easy reuse.
+ *
+ * Key Security Decisions:
+ * - User listing is explicitly disallowed.
+ * - Path-based ownership is enforced for all user-related data.
+ * - Data consistency between paths and document data is validated on create and update.
+ *
+ * Denormalization for Authorization:
+ * - Each document under `/users/{userId}` inherently belongs to that user. The rules leverage this path structure for authorization, avoiding costly `get()` calls to verify ownership.
+ * - Upload documents under `/users/{userId}/uploads/{uploadId}` store the `userId`, enabling rules to verify ownership without reading the User document.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * @description Defines a global function to check if a user is signed in.
+     * @principle Requires authentication for all protected resources.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * @description Defines a global function to check if the requesting user is the owner of the document.
+     * @principle Enforces user-based ownership for data access.
+     */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /**
+     * @description Defines a global function to check if the request is made by the existing owner of the document.
+     * @principle Enforces that updates and deletes can only be performed by the owner and that the document exists.
+     */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
+    }
+
+    /**
+     * @description Rule for the /users/{userId} collection.
+     * @path /users/{userId}
+     * @allow (create) User with ID 'user_abc' can create their own profile.
+     * @deny (create) User with ID 'user_def' cannot create a profile for 'user_abc'.
+     * @principle Allows users to create their own profile and enforces ownership.
+     */
+    match /users/{userId} {
+      allow get: if false;
+      allow list: if false;
+
+      allow create: if isSignedIn() && request.auth.uid == userId && request.resource.data.id == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Rule for the /users/{userId}/uploads/{uploadId} collection.
+     * @path /users/{userId}/uploads/{uploadId}
+     * @allow (create) User with ID 'user_abc' can create an upload under their profile.
+     * @deny (create) User with ID 'user_def' cannot create an upload under 'user_abc's profile.
+     * @principle Enforces user-based ownership for uploads.
+     */
+    match /users/{userId}/uploads/{uploadId} {
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+
+      allow create: if isOwner(userId) && request.resource.data.userId == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Rule for the /users/{userId}/uploads/{uploadId}/textbooks/{textbookId} collection.
+     * @path /users/{userId}/uploads/{uploadId}/textbooks/{textbookId}
+     * @allow (create) User with ID 'user_abc' can create a textbook under their upload.
+     * @deny (create) User with ID 'user_def' cannot create a textbook under 'user_abc's upload.
+     * @principle Enforces user-based ownership for textbooks.
+     */
+    match /users/{userId}/uploads/{uploadId}/textbooks/{textbookId} {
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+
+      allow create: if isOwner(userId) && request.resource.data.uploadId == uploadId;
+      allow update: if isExistingOwner(userId) && request.resource.data.uploadId == resource.data.uploadId;
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Rule for the /users/{userId}/uploads/{uploadId}/notebooks/{notebookId} collection.
+     * @path /users/{userId}/uploads/{uploadId}/notebooks/{notebookId}
+     * @allow (create) User with ID 'user_abc' can create a notebook under their upload.
+     * @deny (create) User with ID 'user_def' cannot create a notebook under 'user_abc's upload.
+     * @principle Enforces user-based ownership for notebooks.
+     */
+    match /users/{userId}/uploads/{uploadId}/notebooks/{notebookId} {
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+
+      allow create: if isOwner(userId) && request.resource.data.uploadId == uploadId;
+      allow update: if isExistingOwner(userId) && request.resource.data.uploadId == resource.data.uploadId;
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Rule for the /users/{userId}/frequent_book_data/{frequentBookDataId} collection.
+     * @path /users/{userId}/frequent_book_data/{frequentBookDataId}
+     * @allow (create) User with ID 'user_abc' can create frequent book data under their profile.
+     * @deny (create) User with ID 'user_def' cannot create frequent book data under 'user_abc's profile.
+     * @principle Enforces user-based ownership for frequent book data.
+     */
+    match /users/{userId}/frequent_book_data/{frequentBookDataId} {
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+
+      allow create: if isOwner(userId) && request.resource.data.userId == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
+      allow delete: if isExistingOwner(userId);
+    }
+  }
+}

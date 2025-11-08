@@ -1,0 +1,341 @@
+{
+  "entities": {
+    "Textbook": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Textbook",
+      "type": "object",
+      "description": "Represents a textbook with its details, including pricing, discounts, and taxes.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Textbook entity."
+        },
+        "uploadId": {
+          "type": "string",
+          "description": "Reference to the Upload entity. (Relationship: Upload 1:N Textbook)"
+        },
+        "bookName": {
+          "type": "string",
+          "description": "The name of the textbook."
+        },
+        "subject": {
+          "type": "string",
+          "description": "The subject of the textbook."
+        },
+        "price": {
+          "type": "number",
+          "description": "The price of the textbook."
+        },
+        "discount": {
+          "type": "number",
+          "description": "The discount percentage applied to the textbook."
+        },
+        "tax": {
+          "type": "number",
+          "description": "The tax percentage applied to the textbook."
+        },
+        "finalPrice": {
+          "type": "number",
+          "description": "The final calculated price of the textbook after applying discounts and taxes."
+        }
+      },
+      "required": [
+        "id",
+        "uploadId",
+        "bookName",
+        "subject",
+        "price",
+        "discount",
+        "tax",
+        "finalPrice"
+      ]
+    },
+    "Notebook": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Notebook",
+      "type": "object",
+      "description": "Represents a notebook with its details, including pricing, discounts, and taxes.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Notebook entity."
+        },
+        "uploadId": {
+          "type": "string",
+          "description": "Reference to the Upload entity. (Relationship: Upload 1:N Notebook)"
+        },
+        "bookName": {
+          "type": "string",
+          "description": "The name of the notebook."
+        },
+        "subject": {
+          "type": "string",
+          "description": "The subject of the notebook."
+        },
+        "price": {
+          "type": "number",
+          "description": "The price of the notebook."
+        },
+        "discount": {
+          "type": "number",
+          "description": "The discount percentage applied to the notebook."
+        },
+        "tax": {
+          "type": "number",
+          "description": "The tax percentage applied to the notebook."
+        },
+        "finalPrice": {
+          "type": "number",
+          "description": "The final calculated price of the notebook after applying discounts and taxes."
+        }
+      },
+      "required": [
+        "id",
+        "uploadId",
+        "bookName",
+        "subject",
+        "price",
+        "discount",
+        "tax",
+        "finalPrice"
+      ]
+    },
+    "Upload": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Upload",
+      "type": "object",
+      "description": "Represents an upload event, storing metadata about the uploaded file and user inputs.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Upload entity."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to the User entity. (Relationship: User 1:N Upload)"
+        },
+        "class": {
+          "type": "string",
+          "description": "The class associated with the upload (e.g., 1-12)."
+        },
+        "courseCombination": {
+          "type": "string",
+          "description": "The course combination associated with the upload (e.g., Science/Commerce/Arts)."
+        },
+        "textbookDiscount": {
+          "type": "number",
+          "description": "The default discount percentage for textbooks in this upload."
+        },
+        "textbookTax": {
+          "type": "number",
+          "description": "The default tax percentage for textbooks in this upload."
+        },
+        "notebookDiscount": {
+          "type": "number",
+          "description": "The default discount percentage for notebooks in this upload."
+        },
+        "notebookTax": {
+          "type": "number",
+          "description": "The default tax percentage for notebooks in this upload."
+        },
+        "uploadTimestamp": {
+          "type": "string",
+          "description": "The timestamp of when the upload occurred.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "class",
+        "courseCombination",
+        "textbookDiscount",
+        "textbookTax",
+        "notebookDiscount",
+        "notebookTax",
+        "uploadTimestamp"
+      ]
+    },
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user of the application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the User entity."
+        },
+        "email": {
+          "type": "string",
+          "description": "The email address of the user.",
+          "format": "email"
+        },
+        "name": {
+          "type": "string",
+          "description": "The display name of the user."
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "name"
+      ]
+    },
+    "FrequentBookData": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "FrequentBookData",
+      "type": "object",
+      "description": "Stores frequently appearing book data like discount and tax for easy reuse.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the FrequentBookData entity."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to the User entity. (Relationship: User 1:N FrequentBookData)"
+        },
+        "bookName": {
+          "type": "string",
+          "description": "The name of the book."
+        },
+        "discount": {
+          "type": "number",
+          "description": "The discount percentage for the book."
+        },
+        "tax": {
+          "type": "number",
+          "description": "The tax percentage for the book."
+        },
+        "type": {
+          "type": "string",
+          "description": "The type of the book (Textbook or Notebook)."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "bookName",
+        "discount",
+        "tax",
+        "type"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user profile information.  Used primarily for user identification and account management.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/uploads/{uploadId}",
+        "definition": {
+          "entityName": "Upload",
+          "schema": {
+            "$ref": "#/backend/entities/Upload"
+          },
+          "description": "Stores metadata about each upload, including the user, class, course combination, and default discounts/taxes. This path enforces path-based ownership.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user who created the upload."
+            },
+            {
+              "name": "uploadId",
+              "description": "The unique identifier for the upload."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/uploads/{uploadId}/textbooks/{textbookId}",
+        "definition": {
+          "entityName": "Textbook",
+          "schema": {
+            "$ref": "#/backend/entities/Textbook"
+          },
+          "description": "Stores textbook data associated with a specific upload. Enforces path-based ownership.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user who created the upload."
+            },
+            {
+              "name": "uploadId",
+              "description": "The unique identifier for the upload."
+            },
+            {
+              "name": "textbookId",
+              "description": "The unique identifier for the textbook."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/uploads/{uploadId}/notebooks/{notebookId}",
+        "definition": {
+          "entityName": "Notebook",
+          "schema": {
+            "$ref": "#/backend/entities/Notebook"
+          },
+          "description": "Stores notebook data associated with a specific upload. Enforces path-based ownership.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user who created the upload."
+            },
+            {
+              "name": "uploadId",
+              "description": "The unique identifier for the upload."
+            },
+            {
+              "name": "notebookId",
+              "description": "The unique identifier for the notebook."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/frequent_book_data/{frequentBookDataId}",
+        "definition": {
+          "entityName": "FrequentBookData",
+          "schema": {
+            "$ref": "#/backend/entities/FrequentBookData"
+          },
+          "description": "Stores frequently appearing book data like discount and tax for easy reuse. Enforces path-based ownership.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user who created the upload."
+            },
+            {
+              "name": "frequentBookDataId",
+              "description": "The unique identifier for the frequently used book data."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore data structure is designed to manage textbook and notebook data, along with upload metadata and frequently used book data. The design prioritizes authorization independence and facilitates secure list operations. It uses path-based ownership for user-related data and denormalization to avoid hierarchical authorization dependencies.\n\n**Authorization Independence:** The structure avoids `get()` calls in security rules by denormalizing authorization context. For example, the `Upload` documents store the `userId`, enabling rules to verify ownership without reading the User document.\n\n**Structural Segregation:** The structure segregates data with different access needs into separate collections. User-specific data (like uploads and frequent book data) resides under `/users/{userId}`, while uploads are stored independently.\n\n**Access Modeling:** Path-based ownership is used for user-owned data (e.g., `/users/{userId}/uploads/{uploadId}`).\n\n**QAPs (Rules are not Filters):** The structure ensures secure `list` operations by using path-based ownership and segregation. Listing uploads under a specific user ID is secure because the path inherently restricts access to that user's data."
+  }
+}
