@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calculator, Download, FileUp, Undo2, BookOpen, GraduationCap, Save } from "lucide-react";
+import { Calculator, Download, FileUp, Undo2, BookOpen, GraduationCap, Save, Tags } from "lucide-react";
 import { Separator } from "./ui/separator";
 import * as XLSX from 'xlsx';
 import { useToast } from "@/hooks/use-toast";
@@ -56,6 +56,10 @@ export default function CalculatorDashboard() {
   const [initialTextbookTax, setInitialTextbookTax] = useState(5);
   const [initialNotebookDiscount, setInitialNotebookDiscount] = useState(15);
   const [initialNotebookTax, setInitialNotebookTax] = useState(5);
+
+  // Publisher discount state
+  const [selectedPublisher, setSelectedPublisher] = useState<string | null>(null);
+  const [publisherDiscount, setPublisherDiscount] = useState<number>(0);
 
   const frequentBookDataQuery = useMemoFirebase(() => 
     user && firestore ? collection(firestore, 'users', user.uid, 'frequent_book_data') : null
@@ -109,6 +113,11 @@ export default function CalculatorDashboard() {
     const notebookTotal = notebooks.reduce((sum, book) => sum + book.finalPrice, 0);
     const grandTotal = textbookTotal + notebookTotal;
     return { textbookTotal, notebookTotal, grandTotal };
+  }, [textbooks, notebooks]);
+
+  const uniquePublishers = useMemo(() => {
+    const allPublishers = [...textbooks, ...notebooks].map(book => book.publisher);
+    return [...new Set(allPublishers)].filter(Boolean).sort();
   }, [textbooks, notebooks]);
 
   const handleProcessMockData = () => {
@@ -251,6 +260,29 @@ export default function CalculatorDashboard() {
       })
     );
   };
+
+  const handleApplyPublisherDiscount = () => {
+    if (!selectedPublisher || publisherDiscount === null) {
+      toast({ variant: 'destructive', title: "Error", description: "Please select a publisher and enter a discount value." });
+      return;
+    }
+
+    const updateBooksWithPublisherDiscount = (prevBooks: Book[], type: BookType): Book[] => 
+      prevBooks.map(book => {
+        if (book.publisher === selectedPublisher) {
+          const updatedBook = { ...book, discount: publisherDiscount };
+          saveFrequentBookData(updatedBook, type);
+          return { ...updatedBook, finalPrice: calculateFinalPrice(updatedBook) };
+        }
+        return book;
+      });
+    
+    setTextbooks(prev => updateBooksWithPublisherDiscount(prev, 'Textbook'));
+    setNotebooks(prev => updateBooksWithPublisherDiscount(prev, 'Notebook'));
+
+    toast({ title: "Success", description: `Applied ${publisherDiscount}% discount to all books by ${selectedPublisher}.` });
+  };
+
 
   const handleDownload = () => {
     const fileName = `${className}_${course}_EduBook_Calculated.xlsx`;
@@ -436,6 +468,42 @@ export default function CalculatorDashboard() {
                     </Button>
                 </CardContent>
             </Card>
+
+            <Card className="shadow-md">
+              <CardHeader>
+                <CardTitle className="text-xl flex items-center gap-2">
+                  <Tags className="h-5 w-5 text-primary"/>
+                  Publisher-Specific Discount
+                </CardTitle>
+                <CardDescription>Apply a discount to all books from a single publisher.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col sm:flex-row items-center gap-4">
+                    <Select onValueChange={setSelectedPublisher} value={selectedPublisher || ''}>
+                        <SelectTrigger className="w-full sm:w-[250px]">
+                            <SelectValue placeholder="Select Publisher" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {uniquePublishers.map((pub) => (
+                                <SelectItem key={pub} value={pub}>{pub}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <Input
+                        type="number"
+                        placeholder="Discount %"
+                        className="w-full sm:w-[150px]"
+                        value={publisherDiscount}
+                        onChange={(e) => setPublisherDiscount(parseFloat(e.target.value) || 0)}
+                        aria-label="Publisher Discount"
+                    />
+                    <Button onClick={handleApplyPublisherDiscount} className="w-full sm:w-auto">
+                        Apply Discount
+                    </Button>
+                </div>
+              </CardContent>
+            </Card>
+
              <div className="space-y-8">
                <BookTable
                  title="Textbooks"
