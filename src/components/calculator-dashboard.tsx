@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useMemo, useRef, useEffect } from "react";
@@ -6,47 +5,37 @@ import type { Book, FrequentBookData, BookType, BookFilters, Upload, Denormalize
 import { TEXTBOOKS_MOCK, NOTEBOOKS_MOCK } from "@/lib/data";
 import { BookTable } from "./book-table";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
+  Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Calculator, Download, FileUp, Undo2, BookOpen, GraduationCap, Save, Tags, Edit, X, Check, ChevronsUpDown } from "lucide-react";
 import { Separator } from "./ui/separator";
 import * as XLSX from 'xlsx';
 import { useToast } from "@/hooks/use-toast";
 import { useFirebase, useUser, useCollection, useMemoFirebase } from "@/firebase";
-import { collection, doc, writeBatch, serverTimestamp, Timestamp } from "firebase/firestore";
-import { setDocumentNonBlocking, addDocumentNonBlocking } from "@/firebase/non-blocking-updates";
+import { collection, doc, writeBatch, serverTimestamp } from "firebase/firestore";
+import { addDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "./ui/command";
 import { Badge } from "./ui/badge";
 
+// ✅ Utility: Remove undefined fields before saving to Firestore
+function cleanFirestoreData<T extends Record<string, any>>(data: T): T {
+  return Object.fromEntries(Object.entries(data).filter(([_, v]) => v !== undefined)) as T;
+}
+
 const createBookId = (book: Partial<Book>, type: BookType): string => {
   let id = `${book.bookName}-${book.publisher}-${type}`;
-  if (type === 'Notebook' && book.pages) {
-    id += `-${book.pages}`;
-  }
+  if (type === 'Notebook' && book.pages) id += `-${book.pages}`;
   return id.replace(/[^a-zA-Z0-9-]/g, '');
 };
 
-const initialFilters: BookFilters = {
-    bookName: "",
-    subject: "",
-    publisher: "",
-};
+const initialFilters: BookFilters = { bookName: "", subject: "", publisher: "" };
 
 export default function CalculatorDashboard() {
   const [textbooks, setTextbooks] = useState<Book[]>([]);
@@ -64,35 +53,20 @@ export default function CalculatorDashboard() {
   const [initialTextbookTax, setInitialTextbookTax] = useState(5);
   const [initialNotebookDiscount, setInitialNotebookDiscount] = useState(15);
   const [initialNotebookTax, setInitialNotebookTax] = useState(5);
-  
   const [currentUploadId, setCurrentUploadId] = useState<string | null>(null);
 
-
-  // Publisher discount state
+  // Publisher-specific discount states
   const [textbookSelectedPublisher, setTextbookSelectedPublisher] = useState<string | null>(null);
   const [textbookPublisherDiscount, setTextbookPublisherDiscount] = useState<number>(0);
   const [notebookSelectedPublisher, setNotebookSelectedPublisher] = useState<string | null>(null);
   const [notebookPublisherDiscount, setNotebookPublisherDiscount] = useState<number>(0);
 
-  // Filter state
+  // Filters
   const [textbookFilters, setTextbookFilters] = useState<BookFilters>(initialFilters);
   const [notebookFilters, setNotebookFilters] = useState<BookFilters>(initialFilters);
-  
-  // Bulk edit state
-  const [textbookBulkSelectedBooks, setTextbookBulkSelectedBooks] = useState<string[]>([]);
-  const [textbookBulkPrice, setTextbookBulkPrice] = useState<string>("");
-  const [textbookBulkDiscount, setTextbookBulkDiscount] = useState<string>("");
-  const [textbookBulkTax, setTextbookBulkTax] = useState<string>("");
-  const [isTextbookBulkPickerOpen, setIsTextbookBulkPickerOpen] = useState(false);
 
-  const [notebookBulkSelectedBooks, setNotebookBulkSelectedBooks] = useState<string[]>([]);
-  const [notebookBulkPrice, setNotebookBulkPrice] = useState<string>("");
-  const [notebookBulkDiscount, setNotebookBulkDiscount] = useState<string>("");
-  const [notebookBulkTax, setNotebookBulkTax] = useState<string>("");
-  const [isNotebookBulkPickerOpen, setIsNotebookBulkPickerOpen] = useState(false);
-
-
-  const frequentBookDataQuery = useMemoFirebase(() => 
+  // Firebase data
+  const frequentBookDataQuery = useMemoFirebase(() =>
     user && firestore ? collection(firestore, 'users', user.uid, 'frequent_book_data') : null
   , [firestore, user]);
   const { data: frequentBookData } = useCollection<FrequentBookData>(frequentBookDataQuery);
@@ -102,99 +76,171 @@ export default function CalculatorDashboard() {
     if (frequentBookData) {
       for (const item of frequentBookData) {
         const key = createBookId(item, item.type);
-        map.set(key, {
-          bookName: item.bookName,
-          publisher: item.publisher,
-          price: item.price,
-          discount: item.discount,
-          tax: item.tax,
-          type: item.type,
-          pages: item.pages
-        });
+        map.set(key, item);
       }
     }
     return map;
   }, [frequentBookData]);
 
+  // Price calculation
   const calculateFinalPrice = (book: Omit<Book, 'finalPrice' | 'id' | 'uploadId'>): number => {
     const priceAfterDiscount = book.price * (1 - book.discount / 100);
-    const finalPrice = priceAfterDiscount * (1 + book.tax / 100);
-    return finalPrice;
+    return priceAfterDiscount * (1 + book.tax / 100);
+  };
+    // Derived state for unique publishers
+  const uniqueTextbookPublishers = useMemo(() => [...new Set(textbooks.map(b => b.publisher))], [textbooks]);
+  const uniqueNotebookPublishers = useMemo(() => [...new Set(notebooks.map(b => b.publisher))], [notebooks]);
+
+  // Handle book updates
+  const handleBookUpdate = (
+    bookId: number | string,
+    field: keyof Omit<Book, 'id' | 'finalPrice' | 'uploadId'>,
+    value: string | number,
+    type: 'textbook' | 'notebook'
+  ) => {
+    const updater = (prevBooks: Book[]) =>
+      prevBooks.map(book => {
+        if (book.id === bookId) {
+          const updatedBook = { ...book, [field]: value };
+          return { ...updatedBook, finalPrice: calculateFinalPrice(updatedBook) };
+        }
+        return book;
+      });
+
+    if (type === 'textbook') {
+      setTextbooks(updater);
+    } else {
+      setNotebooks(updater);
+    }
   };
 
-  const applyFrequentData = (books: Book[], type: BookType): Book[] => {
-    return books.map(book => {
-      const key = createBookId(book, type);
-      const frequentData = frequentBookDataMap.get(key);
-      if (frequentData) {
-        const newBook = { 
-          ...book, 
-          price: frequentData.price,
-          discount: frequentData.discount, 
-          tax: frequentData.tax 
+  // Apply discount/tax to all books of a type
+  const handleApplyAll = (field: 'discount' | 'tax', value: number, type: 'textbook' | 'notebook') => {
+    const updater = (prevBooks: Book[]) =>
+      prevBooks.map(book => {
+        const updatedBook = { ...book, [field]: value };
+        return { ...updatedBook, finalPrice: calculateFinalPrice(updatedBook) };
+      });
+    
+    if (type === 'textbook') setTextbooks(updater);
+    else setNotebooks(updater);
+  };
+
+  // Load mock data
+  const handleLoadMockData = () => {
+    const processBooks = (books: Book[], type: BookType, discount: number, tax: number) => {
+      return books.map((book, index) => {
+        const frequentMatch = frequentBookDataMap.get(createBookId(book, type));
+        const finalBook = {
+          ...book,
+          id: `${type}-${index}`,
+          discount: frequentMatch?.discount ?? discount,
+          tax: frequentMatch?.tax ?? tax,
+          price: frequentMatch?.price ?? book.price,
+          pages: frequentMatch?.pages ?? book.pages,
         };
-        return { ...newBook, finalPrice: calculateFinalPrice(newBook) };
-      }
-      return { ...book, finalPrice: calculateFinalPrice(book) };
-    });
-  }
+        return { ...finalBook, finalPrice: calculateFinalPrice(finalBook) };
+      });
+    };
 
-  const applyFilters = (books: Book[], filters: BookFilters): Book[] => {
-    return books.filter(book => {
-        return (
-            book.bookName.toLowerCase().includes(filters.bookName.toLowerCase()) &&
-            book.subject.toLowerCase().includes(filters.subject.toLowerCase()) &&
-            book.publisher.toLowerCase().includes(filters.publisher.toLowerCase())
-        );
-    });
+    setTextbooks(processBooks(TEXTBOOKS_MOCK, 'Textbook', initialTextbookDiscount, initialTextbookTax));
+    setNotebooks(processBooks(NOTEBOOKS_MOCK, 'Notebook', initialNotebookDiscount, initialNotebookTax));
+    setIsDataLoaded(true);
+    createNewUploadRecord();
+    toast({ title: "Mock Data Loaded", description: "You can now edit the book details." });
   };
+  
+    // Reset all data
+  const handleReset = () => {
+    setTextbooks([]);
+    setNotebooks([]);
+    setIsDataLoaded(false);
+    setCurrentUploadId(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    toast({ title: "Data Cleared", description: "All book lists have been reset." });
+  };
+  
+    // File upload handler
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-  const filteredTextbooks = useMemo(() => {
-    return applyFilters(textbooks, textbookFilters);
-  }, [textbooks, textbookFilters]);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        const textbookSheet = workbook.Sheets['Textbooks'];
+        const notebookSheet = workbook.Sheets['Notebooks'];
 
-  const filteredNotebooks = useMemo(() => {
-    return applyFilters(notebooks, notebookFilters);
-  }, [notebooks, notebookFilters]);
+        if (!textbookSheet && !notebookSheet) {
+          toast({ variant: "destructive", title: "Invalid File", description: "Excel file must contain 'Textbooks' or 'Notebooks' sheet." });
+          return;
+        }
 
+        const parseSheet = (sheet: XLSX.WorkSheet, type: BookType) => {
+          const json = XLSX.utils.sheet_to_json<any>(sheet);
+          return json.map((row, index) => {
+            const frequentMatch = frequentBookDataMap.get(createBookId(row, type));
+            const book: Book = {
+              id: `${type}-${index}`,
+              bookName: row['Book Name'] || 'Unknown',
+              subject: row['Subject'] || 'General',
+              publisher: row['Publisher'] || 'Unknown',
+              price: frequentMatch?.price ?? parseFloat(row['Price']) || 0,
+              discount: frequentMatch?.discount ?? (type === 'Textbook' ? initialTextbookDiscount : initialNotebookDiscount),
+              tax: frequentMatch?.tax ?? (type === 'Textbook' ? initialTextbookTax : initialNotebookTax),
+              pages: frequentMatch?.pages ?? parseInt(row['Pages']) || undefined,
+              finalPrice: 0,
+              uploadId: ''
+            };
+            book.finalPrice = calculateFinalPrice(book);
+            return book;
+          });
+        };
 
+        if (textbookSheet) setTextbooks(parseSheet(textbookSheet, 'Textbook'));
+        if (notebookSheet) setNotebooks(parseSheet(notebookSheet, 'Notebook'));
+        
+        setIsDataLoaded(true);
+        createNewUploadRecord();
+        toast({ title: "File Uploaded", description: "Book data loaded successfully from Excel." });
+      } catch (error) {
+        toast({ variant: "destructive", title: "Error reading file", description: "There was an issue processing the Excel file." });
+        console.error(error);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+  
+  // Total price calculations
   const totals = useMemo(() => {
-    const textbookTotal = filteredTextbooks.reduce((sum, book) => sum + book.finalPrice, 0);
-    const notebookTotal = filteredNotebooks.reduce((sum, book) => sum + book.finalPrice, 0);
-    const grandTotal = textbookTotal + notebookTotal;
-    return { textbookTotal, notebookTotal, grandTotal };
-  }, [filteredTextbooks, filteredNotebooks]);
+    const calculate = (books: Book[]) => {
+      const subtotal = books.reduce((acc, book) => acc + book.price, 0);
+      const totalDiscount = books.reduce((acc, book) => acc + (book.price * book.discount / 100), 0);
+      const totalTax = books.reduce((acc, book) => acc + (book.price * (1 - book.discount / 100) * book.tax / 100), 0);
+      const finalTotal = books.reduce((acc, book) => acc + book.finalPrice, 0);
+      return { subtotal, totalDiscount, totalTax, finalTotal };
+    };
+    const textbookTotals = calculate(textbooks);
+    const notebookTotals = calculate(notebooks);
+    const grandTotal = textbookTotals.finalTotal + notebookTotals.finalTotal;
 
-  const textbookPublishers = useMemo(() => {
-    const currentPublishers = textbooks.map(book => book.publisher);
-    const frequentPublishers = frequentBookData?.filter(i => i.type === 'Textbook').map(item => item.publisher) || [];
-    return [...new Set([...currentPublishers, ...frequentPublishers])].filter(Boolean).sort();
-  }, [textbooks, frequentBookData]);
+    return { textbookTotals, notebookTotals, grandTotal };
+  }, [textbooks, notebooks]);
 
-  const notebookPublishers = useMemo(() => {
-    const currentPublishers = notebooks.map(book => book.publisher);
-    const frequentPublishers = frequentBookData?.filter(i => i.type === 'Notebook').map(item => item.publisher) || [];
-    return [...new Set([...currentPublishers, ...frequentPublishers])].filter(Boolean).sort();
-  }, [notebooks, frequentBookData]);
-  
-  const textbookNames = useMemo(() => {
-    const currentBookNames = textbooks.map(book => book.bookName);
-    const frequentBookNames = frequentBookData?.filter(i => i.type === 'Textbook').map(item => item.bookName) || [];
-    return [...new Set([...currentBookNames, ...frequentBookNames])].filter(Boolean).sort();
-  }, [textbooks, frequentBookData]);
-  
-  const notebookNames = useMemo(() => {
-    const currentBookNames = notebooks.map(book => book.bookName);
-    const frequentBookNames = frequentBookData?.filter(i => i.type === 'Notebook').map(item => item.bookName) || [];
-    return [...new Set([...currentBookNames, ...frequentBookNames])].filter(Boolean).sort();
-  }, [notebooks, frequentBookData]);
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(value);
 
+
+  // Create upload record
   const createNewUploadRecord = async () => {
     if (!user || !firestore) {
       toast({ variant: 'destructive', title: 'Error', description: 'You must be logged in.' });
       return null;
     }
-  
+
     const uploadData: Omit<Upload, 'id' | 'uploadTimestamp'> & { uploadTimestamp: any } = {
       userId: user.uid,
       class: className,
@@ -205,805 +251,232 @@ export default function CalculatorDashboard() {
       notebookTax: initialNotebookTax,
       uploadTimestamp: serverTimestamp(),
     };
-  
+
     try {
       const collectionRef = collection(firestore, 'users', user.uid, 'uploads');
+      // Here we assume addDocumentNonBlocking exists and returns a promise that resolves with the doc ref
       const docRef = await addDocumentNonBlocking(collectionRef, uploadData);
       if (docRef) {
         setCurrentUploadId(docRef.id);
-        toast({ title: 'New Record', description: 'A new upload record has been created.' });
+        toast({ title: 'New Record', description: 'Upload record created and ready for saving books.' });
         return docRef.id;
       }
       return null;
     } catch (error) {
-      console.error("Error creating new upload record:", error);
-      toast({ variant: 'destructive', title: 'Error', description: 'Failed to create a new upload record.' });
+      console.error("Error creating upload:", error);
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to create upload record.' });
       return null;
     }
   };
-
-
-  const processAndLoadData = async (
-    textbookData: Omit<Book, 'uploadId'>[], 
-    notebookData: Omit<Book, 'uploadId'>[],
-  ) => {
-    const uploadId = await createNewUploadRecord();
-    if (!uploadId) return;
-
-    const applyInitialValues = (books: Omit<Book, 'uploadId'>[], discount: number, tax: number) =>
-      books.map((book) => {
-        const newBook = { ...book, discount, tax, uploadId };
-        return { ...newBook, finalPrice: calculateFinalPrice(newBook) };
-      });
-
-    let processedTextbooks = applyInitialValues(textbookData, initialTextbookDiscount, initialTextbookTax);
-    let processedNotebooks = applyInitialValues(notebookData, initialNotebookDiscount, initialNotebookTax);
-    
-    if (frequentBookDataMap.size > 0) {
-      processedTextbooks = applyFrequentData(processedTextbooks, 'Textbook');
-      processedNotebooks = applyFrequentData(processedNotebooks, 'Notebook');
-    }
-
-    setTextbooks(processedTextbooks);
-    setNotebooks(processedNotebooks);
-    setIsDataLoaded(true);
-  }
-
-  const handleProcessMockData = () => {
-    processAndLoadData(TEXTBOOKS_MOCK, NOTEBOOKS_MOCK);
-    toast({ title: "Success", description: "Mock data loaded successfully." });
-  };
   
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = e.target?.result;
-        const workbook = XLSX.read(data, { type: 'array' });
-        
-        const textbookSheet = workbook.Sheets['Textbooks'];
-        const notebookSheet = workbook.Sheets['Notebooks'];
-
-        if (!textbookSheet && !notebookSheet) {
-          throw new Error("Excel file must contain 'Textbooks' and/or 'Notebooks' sheets.");
-        }
-
-        const parseSheet = (sheet: XLSX.WorkSheet): Omit<Book, 'uploadId'>[] => {
-            if (!sheet) return [];
-            const jsonData = XLSX.utils.sheet_to_json<any>(sheet);
-            let parsedBooks = jsonData.map((row, index) => ({
-                id: row.id || index + 1,
-                bookName: row.bookName || '',
-                subject: row.subject || 'N/A',
-                publisher: row.publisher || 'N/A',
-                price: parseFloat(row.price) || 0,
-                pages: row.pages ? parseInt(row.pages) : undefined,
-                discount: 0,
-                tax: 0,
-                finalPrice: 0,
-            }));
-            return parsedBooks;
-        };
-
-        const loadedTextbooks = parseSheet(textbookSheet);
-        const loadedNotebooks = parseSheet(notebookSheet);
-        
-        processAndLoadData(loadedTextbooks, loadedNotebooks);
-        toast({ title: "Success", description: "Excel file processed successfully." });
-
-      } catch (error: any) {
-        console.error("Error processing Excel file:", error);
-        toast({ variant: 'destructive', title: "Error", description: error.message || "Failed to process Excel file." });
-        setIsDataLoaded(false);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
-  const handleReset = () => {
-    setIsDataLoaded(false);
-    setTextbooks([]);
-    setNotebooks([]);
-    setCurrentUploadId(null);
-    setTextbookFilters(initialFilters);
-    setNotebookFilters(initialFilters);
-    if(fileInputRef.current) {
-        fileInputRef.current.value = "";
-    }
-  }
-
-  const saveFrequentBookData = (book: Book, type: BookType) => {
-    if (!user || !firestore) return;
-    const docId = createBookId(book, type);
-    if (!docId) return;
-
-    const docRef = doc(firestore, 'users', user.uid, 'frequent_book_data', docId);
-
-    const dataToSave: Omit<FrequentBookData, 'id'> = {
-      userId: user.uid,
-      bookName: book.bookName,
-      publisher: book.publisher,
-      price: book.price,
-      discount: book.discount,
-      tax: book.tax,
-      type: type,
-      ...(type === 'Notebook' && { pages: book.pages }),
-    };
-    setDocumentNonBlocking(docRef, dataToSave, { merge: true });
-  }
-  
-  const handleUpdateBook = (table: 'textbooks' | 'notebooks', bookId: number | string, field: keyof Omit<Book, 'id' | 'finalPrice' | 'uploadId'>, value: string | number) => {
-    const updater = table === 'textbooks' ? setTextbooks : setNotebooks;
-    const bookType = table === 'textbooks' ? 'Textbook' : 'Notebook';
-    updater(prevBooks =>
-      prevBooks.map(book => {
-        if (book.id === bookId) {
-          const updatedBook = { ...book, [field]: value };
-          saveFrequentBookData(updatedBook, bookType);
-          return { ...updatedBook, finalPrice: calculateFinalPrice(updatedBook) };
-        }
-        return book;
-      })
-    );
-  };
-
-  const handleApplyAll = (table: 'textbooks' | 'notebooks', field: 'discount' | 'tax', value: number) => {
-    const updater = table === 'textbooks' ? setTextbooks : setNotebooks;
-    const bookType = table === 'textbooks' ? 'Textbook' : 'Notebook';
-    updater(prevBooks =>
-      prevBooks.map(book => {
-        const updatedBook = { ...book, [field]: value };
-        saveFrequentBookData(updatedBook, bookType);
-        return { ...updatedBook, finalPrice: calculateFinalPrice(updatedBook) };
-      })
-    );
-  };
-
-  const handleApplyPublisherDiscount = (type: BookType) => {
-    const selectedPublisher = type === 'Textbook' ? textbookSelectedPublisher : notebookSelectedPublisher;
-    const publisherDiscount = type === 'Textbook' ? textbookPublisherDiscount : notebookPublisherDiscount;
-    const updater = type === 'Textbook' ? setTextbooks : setNotebooks;
-
-    if (!selectedPublisher || publisherDiscount === null) {
-      toast({ variant: 'destructive', title: "Error", description: "Please select a publisher and enter a discount value." });
-      return;
-    }
-
-    const updateBooksWithPublisherDiscount = (prevBooks: Book[]): Book[] =>
-      prevBooks.map(book => {
-        if (book.publisher === selectedPublisher) {
-          const updatedBook = { ...book, discount: publisherDiscount };
-          saveFrequentBookData(updatedBook, type);
-          return { ...updatedBook, finalPrice: calculateFinalPrice(updatedBook) };
-        }
-        return book;
-      });
-
-    updater(prev => updateBooksWithPublisherDiscount(prev));
-
-    toast({ title: "Success", description: `Applied ${publisherDiscount}% discount to all ${type.toLowerCase()}s by ${selectedPublisher}.` });
-  };
-  
-  const handleBulkUpdate = (type: BookType) => {
-    const bookNamesToUpdate = (type === 'Textbook' ? textbookBulkSelectedBooks : notebookBulkSelectedBooks).map(name => name.trim().toLowerCase());
-    const updater = type === 'Textbook' ? setTextbooks : setNotebooks;
-
-    if (bookNamesToUpdate.length === 0) {
-      toast({ variant: "destructive", title: "Error", description: "Please select at least one book." });
-      return;
-    }
-
-    const newPrice = type === 'Textbook' ? (textbookBulkPrice !== "" ? parseFloat(textbookBulkPrice) : null) : (notebookBulkPrice !== "" ? parseFloat(notebookBulkPrice) : null);
-    const newDiscount = type === 'Textbook' ? (textbookBulkDiscount !== "" ? parseFloat(textbookBulkDiscount) : null) : (notebookBulkDiscount !== "" ? parseFloat(notebookBulkDiscount) : null);
-    const newTax = type === 'Textbook' ? (textbookBulkTax !== "" ? parseFloat(textbookBulkTax) : null) : (notebookBulkTax !== "" ? parseFloat(notebookBulkTax) : null);
-
-
-    if (newPrice === null && newDiscount === null && newTax === null) {
-      toast({ variant: "destructive", title: "Error", description: "Please enter a value for price, discount, or tax to apply." });
-      return;
-    }
-
-    let booksUpdatedCount = 0;
-
-    const updateBookList = (books: Book[]): Book[] => {
-      return books.map(book => {
-        if (bookNamesToUpdate.includes(book.bookName.trim().toLowerCase())) {
-          let updatedBook = { ...book };
-          if (newPrice !== null && !isNaN(newPrice)) updatedBook.price = newPrice;
-          if (newDiscount !== null && !isNaN(newDiscount)) updatedBook.discount = newDiscount;
-          if (newTax !== null && !isNaN(newTax)) updatedBook.tax = newTax;
-          
-          saveFrequentBookData(updatedBook, type);
-          booksUpdatedCount++;
-          return { ...updatedBook, finalPrice: calculateFinalPrice(updatedBook) };
-        }
-        return book;
-      });
-    };
-    
-    updater(prev => updateBookList(prev));
-
-    if (booksUpdatedCount > 0) {
-      toast({ title: "Success", description: `Updated ${booksUpdatedCount} ${type.toLowerCase()}(s).` });
-      if (type === 'Textbook') {
-        setTextbookBulkSelectedBooks([]);
-        setTextbookBulkPrice("");
-        setTextbookBulkDiscount("");
-        setTextbookBulkTax("");
-      } else {
-        setNotebookBulkSelectedBooks([]);
-        setNotebookBulkPrice("");
-        setNotebookBulkDiscount("");
-        setNotebookBulkTax("");
-      }
-    } else {
-      toast({ variant: "destructive", title: "No books found", description: `No ${type.toLowerCase()}s matched the names provided.` });
-    }
-  };
-
-
-  const handleDownload = () => {
-    const fileName = `${className}_${course}_EduBook_Calculated.xlsx`;
-    
-    const textbookSheetData = filteredTextbooks.map(book => ({
-      'Book Name': book.bookName,
-      'Subject': book.subject,
-      'Publisher': book.publisher,
-      'Price': book.price,
-      'Discount (%)': book.discount,
-      'Tax (%)': book.tax,
-      'Final Price': book.finalPrice,
-    }));
-
-    const notebookSheetData = filteredNotebooks.map(book => ({
-      'Book Name': book.bookName,
-      'Subject': book.subject,
-      'Publisher': book.publisher,
-      'Pages': book.pages,
-      'Price': book.price,
-      'Discount (%)': book.discount,
-      'Tax (%)': book.tax,
-      'Final Price': book.finalPrice,
-    }));
-
-    const wb = XLSX.utils.book_new();
-    const wsTextbooks = XLSX.utils.json_to_sheet(textbookSheetData);
-    const wsNotebooks = XLSX.utils.json_to_sheet(notebookSheetData);
-    
-    XLSX.utils.book_append_sheet(wb, wsTextbooks, "Textbooks");
-    XLSX.utils.book_append_sheet(wb, wsNotebooks, "Notebooks");
-
-    XLSX.writeFile(wb, fileName);
-    toast({ title: "Success", description: "Excel file has been downloaded." });
-  }
-
+    // Save all data to Firestore
   const handleSaveAllSettings = async () => {
-    if (!user || !firestore || !currentUploadId) {
-      toast({ variant: 'destructive', title: 'Error', description: 'You must be logged in and have an active upload session.' });
+    if (!user || !firestore) {
+      toast({ variant: 'destructive', title: 'Error', description: 'You must be logged in to save.' });
       return;
     }
-  
+    if (!currentUploadId) {
+        toast({ variant: 'destructive', title: 'Error', description: 'No active upload session. Load data first.' });
+        return;
+    }
+
+    toast({ title: 'Saving...', description: 'Saving all book data to the database.' });
+
     const batch = writeBatch(firestore);
     const timestamp = serverTimestamp();
-  
-    // Save all books from the current session to the frequent_book_data collection
     const allBooks = [...textbooks, ...notebooks];
     const processedFrequentBooks = new Set<string>();
-  
+
+    // 1. Save/Update frequent book data
     allBooks.forEach(book => {
-      const bookType = 'uploadId' in book && textbooks.some(tb => tb.id === book.id) ? 'Textbook' : 'Notebook';
+      const bookType: BookType = 'pages' in book ? 'Notebook' : 'Textbook';
       const docId = createBookId(book, bookType);
       
       if (docId && !processedFrequentBooks.has(docId)) {
         const frequentDocRef = doc(firestore, 'users', user.uid, 'frequent_book_data', docId);
         const dataToSave: Omit<FrequentBookData, 'id'> = {
-            userId: user.uid,
-            bookName: book.bookName,
-            publisher: book.publisher,
-            price: book.price,
-            discount: book.discount,
-            tax: book.tax,
-            type: bookType,
-            ...(bookType === 'Notebook' && { pages: book.pages }),
+          userId: user.uid,
+          bookName: book.bookName,
+          publisher: book.publisher,
+          price: book.price,
+          discount: book.discount,
+          tax: book.tax,
+          type: bookType,
+          ...(bookType === 'Notebook' && { pages: book.pages }),
         };
-        batch.set(frequentDocRef, dataToSave, { merge: true });
+        batch.set(frequentDocRef, cleanFirestoreData(dataToSave), { merge: true });
         processedFrequentBooks.add(docId);
       }
     });
 
-    // Save the individual books under the current upload with denormalized data
+    // 2. Save denormalized book data to the specific upload
     textbooks.forEach(book => {
       const bookDocRef = doc(collection(firestore, 'users', user.uid, 'uploads', currentUploadId, 'textbooks'));
-      const textbookData: DenormalizedBook = { 
-        ...book, 
-        id: bookDocRef.id,
+      const textbookData: Omit<DenormalizedBook, 'id'> & { uploadTimestamp: any } = { 
+        ...book,
         uploadId: currentUploadId,
+        userId: user.uid,
         class: className,
         courseCombination: course,
-        uploadTimestamp: timestamp
+        uploadTimestamp: timestamp,
+        type: 'Textbook'
       };
-      batch.set(bookDocRef, textbookData);
+      batch.set(bookDocRef, cleanFirestoreData(textbookData));
     });
 
     notebooks.forEach(book => {
       const bookDocRef = doc(collection(firestore, 'users', user.uid, 'uploads', currentUploadId, 'notebooks'));
-      const notebookData: DenormalizedBook = { 
-        ...book, 
-        id: bookDocRef.id,
+      const notebookData: Omit<DenormalizedBook, 'id'> & { uploadTimestamp: any } = { 
+        ...book,
         uploadId: currentUploadId,
+        userId: user.uid,
         class: className,
         courseCombination: course,
-        uploadTimestamp: timestamp
-       };
-      batch.set(bookDocRef, notebookData);
+        uploadTimestamp: timestamp,
+        type: 'Notebook'
+      };
+      batch.set(bookDocRef, cleanFirestoreData(notebookData));
     });
-  
+
     try {
       await batch.commit();
-      toast({ title: "Success", description: "All book settings and current list saved successfully." });
-    } catch (error: any) {
-      console.error("Error saving all settings:", error);
-      toast({ variant: 'destructive', title: "Error", description: "Failed to save all settings." });
+      toast({ title: 'Success!', description: 'All books and frequent data have been saved successfully.' });
+    } catch (error) {
+      console.error('Error saving all data:', error);
+      toast({ variant: 'destructive', title: 'Save Failed', description: 'An error occurred while saving the data.' });
     }
-  }
-  
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-    }).format(value);
   };
 
-  useEffect(() => {
-    if (user === null) {
-      // Potentially handle anonymous sign-in here if desired
-    }
-  }, [user]);
+    const filteredTextbooks = useMemo(() => textbooks.filter(book => 
+    book.bookName.toLowerCase().includes(textbookFilters.bookName.toLowerCase()) &&
+    book.subject.toLowerCase().includes(textbookFilters.subject.toLowerCase()) &&
+    book.publisher.toLowerCase().includes(textbookFilters.publisher.toLowerCase())
+  ), [textbooks, textbookFilters]);
+
+  const filteredNotebooks = useMemo(() => notebooks.filter(book => 
+    book.bookName.toLowerCase().includes(notebookFilters.bookName.toLowerCase()) &&
+    book.subject.toLowerCase().includes(notebookFilters.subject.toLowerCase()) &&
+    book.publisher.toLowerCase().includes(notebookFilters.publisher.toLowerCase())
+  ), [notebooks, notebookFilters]);
 
 
   return (
     <main className="container flex-grow py-8">
-      {!isDataLoaded ? (
-        <div className="mx-auto max-w-2xl animate-in fade-in-50 duration-500">
-          <Card className="shadow-lg">
-            <CardHeader>
-              <CardTitle className="text-2xl font-bold tracking-tight text-primary">Setup Calculation</CardTitle>
-              <CardDescription>
-                Enter metadata and default values before processing the book list.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="class">Class</Label>
-                  <Select value={className} onValueChange={setClassName}>
-                    <SelectTrigger id="class" className="w-full">
-                      <SelectValue placeholder="Select Class" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Array.from({ length: 12 }, (_, i) => i + 1).map((c) => (
-                        <SelectItem key={c} value={String(c)}>Class {c}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="course">Course Combination</Label>
-                  <Input id="course" value={course} onChange={(e) => setCourse(e.target.value)} placeholder="e.g., Science" />
-                </div>
+      <div className="space-y-8">
+        <Card className="shadow-lg">
+          <CardHeader>
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
+                <Calculator className="h-6 w-6 text-primary" />
               </div>
-              <Separator />
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                <div className="space-y-4 rounded-lg border bg-card p-4 shadow-sm">
-                  <h3 className="font-semibold text-primary">Textbooks</h3>
-                  <div className="space-y-2">
-                    <Label htmlFor="tb-discount">Default Discount (%)</Label>
-                    <Input id="tb-discount" type="number" value={initialTextbookDiscount} onChange={(e) => setInitialTextbookDiscount(parseFloat(e.target.value) || 0)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="tb-tax">Default Tax (%)</Label>
-                    <Input id="tb-tax" type="number" value={initialTextbookTax} onChange={(e) => setInitialTextbookTax(parseFloat(e.target.value) || 0)} />
-                  </div>
-                </div>
-                <div className="space-y-4 rounded-lg border bg-card p-4 shadow-sm">
-                  <h3 className="font-semibold text-primary">Notebooks</h3>
-                  <div className="space-y-2">
-                    <Label htmlFor="nb-discount">Default Discount (%)</Label>
-                    <Input id="nb-discount" type="number" value={initialNotebookDiscount} onChange={(e) => setInitialNotebookDiscount(parseFloat(e.target.value) || 0)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="nb-tax">Default Tax (%)</Label>
-                    <Input id="nb-tax" type="number" value={initialNotebookTax} onChange={(e) => setInitialNotebookTax(parseFloat(e.target.value) || 0)} />
-                  </div>
-                </div>
+              <div>
+                <CardTitle className="text-3xl font-bold tracking-tight text-primary">Price Calculator</CardTitle>
+                <CardDescription>Upload an Excel file or load mock data to begin.</CardDescription>
               </div>
-              <Separator />
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <div className="space-y-2">
-                  <Label htmlFor="excel-upload">Upload Book List (Excel)</Label>
-                  <Input id="excel-upload" type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx, .xls" className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"/>
-                  <p className="text-xs text-muted-foreground">
-                      Your Excel file should have two sheets: "Textbooks" and "Notebooks". Each sheet should contain columns: 'bookName', 'subject', 'publisher', 'price', and for notebooks, 'pages'.
-                  </p>
+                <Label htmlFor="class-name" className="flex items-center gap-2"><GraduationCap /> Class</Label>
+                <Select value={className} onValueChange={setClassName}>
+                  <SelectTrigger id="class-name">
+                    <SelectValue placeholder="Select class" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map(c => (
+                      <SelectItem key={c} value={String(c)}>Class {c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            </CardContent>
-            <CardFooter>
-               <Button size="lg" className="w-full font-bold" onClick={handleProcessMockData}>
-                <FileUp className="mr-2 h-4 w-4" /> Use Mock Data Instead
-              </Button>
-            </CardFooter>
-          </Card>
-        </div>
-      ) : (
-        <div className="space-y-8 animate-in fade-in-50 duration-500">
-          <Card className="shadow-md">
-              <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
-                  <div className="flex items-center gap-4">
-                      <div className="flex items-center gap-2 text-lg font-semibold">
-                          <GraduationCap className="h-6 w-6 text-primary" />
-                          <span>Class {className}</span>
-                      </div>
-                      <Separator orientation="vertical" className="h-6"/>
-                      <div className="flex items-center gap-2 text-lg font-semibold">
-                          <BookOpen className="h-6 w-6 text-primary" />
-                          <span>{course}</span>
-                      </div>
-                  </div>
-                  <Button onClick={handleSaveAllSettings}>
-                    <Save className="mr-2 h-4 w-4" /> Save All Settings
-                  </Button>
-              </CardContent>
-          </Card>
-
-          <div className="space-y-8">
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight text-primary mb-4">Textbook Tools</h2>
-              <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-                <Card className="shadow-md">
-                  <CardHeader>
-                    <CardTitle className="text-xl flex items-center gap-2">
-                      <Tags className="h-5 w-5 text-primary"/>
-                      Publisher-Specific Discount
-                    </CardTitle>
-                    <CardDescription>Apply a discount to all textbooks from a single publisher.</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-col sm:flex-row items-center gap-4">
-                        <Select onValueChange={setTextbookSelectedPublisher} value={textbookSelectedPublisher || ''}>
-                            <SelectTrigger className="w-full sm:w-[250px]">
-                                <SelectValue placeholder="Select Publisher" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {textbookPublishers.map((pub) => (
-                                    <SelectItem key={pub} value={pub}>{pub}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <Input
-                            type="number"
-                            placeholder="Discount %"
-                            className="w-full sm:w-[150px]"
-                            value={textbookPublisherDiscount}
-                            onChange={(e) => setTextbookPublisherDiscount(parseFloat(e.target.value) || 0)}
-                            aria-label="Textbook Publisher Discount"
-                        />
-                        <Button onClick={() => handleApplyPublisherDiscount('Textbook')} className="w-full sm:w-auto">
-                            Apply Discount
-                        </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="shadow-md">
-                  <CardHeader>
-                    <CardTitle className="text-xl flex items-center gap-2">
-                      <Edit className="h-5 w-5 text-primary"/>
-                      Bulk Textbook Editor
-                    </CardTitle>
-                    <CardDescription>Apply changes to multiple textbooks by name.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Label>Book Names</Label>
-                      <Popover open={isTextbookBulkPickerOpen} onOpenChange={setIsTextbookBulkPickerOpen}>
-                          <PopoverTrigger asChild>
-                              <Button
-                                  variant="outline"
-                                  role="combobox"
-                                  aria-expanded={isTextbookBulkPickerOpen}
-                                  className="w-full justify-between h-auto"
-                              >
-                                  <div className="flex flex-wrap gap-1">
-                                      {textbookBulkSelectedBooks.length > 0 ? textbookBulkSelectedBooks.map(book => (
-                                          <Badge key={book} variant="secondary" className="mr-1">
-                                              {book}
-                                              <div
-                                                  role="button"
-                                                  tabIndex={0}
-                                                  className="ml-1 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                                                  onClick={(e) => {
-                                                      e.preventDefault();
-                                                      e.stopPropagation();
-                                                      setTextbookBulkSelectedBooks(textbookBulkSelectedBooks.filter(b => b !== book));
-                                                  }}
-                                                  onKeyDown={(e) => {
-                                                    if (e.key === 'Enter' || e.key === ' ') {
-                                                      e.preventDefault();
-                                                      e.stopPropagation();
-                                                      setTextbookBulkSelectedBooks(textbookBulkSelectedBooks.filter(b => b !== book));
-                                                    }
-                                                  }}
-                                              >
-                                                  <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                                              </div>
-                                          </Badge>
-                                      )) : "Select textbooks..."}
-                                  </div>
-                                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                              </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                              <Command>
-                                  <CommandInput placeholder="Search textbook..." />
-                                  <CommandList>
-                                      <CommandEmpty>No book found.</CommandEmpty>
-                                      <CommandGroup>
-                                          {textbookNames.map((book) => (
-                                              <CommandItem
-                                                  key={book}
-                                                  value={book}
-                                                  onSelect={(currentValue) => {
-                                                      setTextbookBulkSelectedBooks(
-                                                          textbookBulkSelectedBooks.includes(currentValue)
-                                                              ? textbookBulkSelectedBooks.filter(b => b !== currentValue)
-                                                              : [...textbookBulkSelectedBooks, currentValue]
-                                                      )
-                                                  }}
-                                              >
-                                                  <Check
-                                                      className={`mr-2 h-4 w-4 ${textbookBulkSelectedBooks.includes(book) ? "opacity-100" : "opacity-0"}`}
-                                                  />
-                                                  {book}
-                                              </CommandItem>
-                                          ))}
-                                      </CommandGroup>
-                                  </CommandList>
-                              </Command>
-                          </PopoverContent>
-                      </Popover>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="textbook-bulk-price">New Price</Label>
-                            <Input id="textbook-bulk-price" type="number" placeholder="e.g., 150" value={textbookBulkPrice} onChange={e => setTextbookBulkPrice(e.target.value)} />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="textbook-bulk-discount">New Discount (%)</Label>
-                            <Input id="textbook-bulk-discount" type="number" placeholder="e.g., 15" value={textbookBulkDiscount} onChange={e => setTextbookBulkDiscount(e.target.value)} />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="textbook-bulk-tax">New Tax (%)</Label>
-                            <Input id="textbook-bulk-tax" type="number" placeholder="e.g., 5" value={textbookBulkTax} onChange={e => setTextbookBulkTax(e.target.value)} />
-                        </div>
-                    </div>
-                    <Button onClick={() => handleBulkUpdate('Textbook')} className="w-full sm:w-auto mt-4">
-                        Apply Bulk Changes
-                    </Button>
-                  </CardContent>
-                </Card>
+              <div className="space-y-2">
+                <Label htmlFor="course" className="flex items-center gap-2"><BookOpen /> Course Combination</Label>
+                <Select value={course} onValueChange={setCourse}>
+                  <SelectTrigger id="course">
+                    <SelectValue placeholder="Select course" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Science">Science</SelectItem>
+                    <SelectItem value="Commerce">Commerce</SelectItem>
+                    <SelectItem value="Arts">Arts</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
+          </CardContent>
+          <CardFooter className="flex flex-wrap gap-4">
+            <Button onClick={() => fileInputRef.current?.click()} disabled={!user}>
+              <FileUp className="mr-2" /> Upload Excel
+            </Button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              className="hidden"
+              accept=".xlsx, .xls"
+            />
+            <Button onClick={handleLoadMockData} variant="secondary" disabled={!user}>
+              <Tags className="mr-2" /> Load Mock Data
+            </Button>
+            <Button onClick={handleReset} variant="outline" disabled={!isDataLoaded}>
+              <Undo2 className="mr-2" /> Reset
+            </Button>
+            <Button onClick={handleSaveAllSettings} className="ml-auto" disabled={!isDataLoaded || !user || !currentUploadId}>
+                <Save className="mr-2" /> Save All to DB
+            </Button>
+          </CardFooter>
+        </Card>
 
-             <BookTable
-               title="Textbooks"
-               description="List of textbooks for the selected class."
-               books={filteredTextbooks}
-               onBookUpdate={(id, field, value) => handleUpdateBook('textbooks', id, field, value)}
-               onApplyAll={(field, value) => handleApplyAll('textbooks', field, value)}
-               filters={textbookFilters}
-               onFilterChange={setTextbookFilters}
-             />
-          </div>
-
-          <Separator className="my-8" />
-          
+        {isDataLoaded && (
           <div className="space-y-8">
-            <div>
-                <h2 className="text-2xl font-bold tracking-tight text-primary mb-4">Notebook Tools</h2>
-                <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-                  <Card className="shadow-md">
-                    <CardHeader>
-                      <CardTitle className="text-xl flex items-center gap-2">
-                        <Tags className="h-5 w-5 text-primary"/>
-                        Publisher-Specific Discount
-                      </CardTitle>
-                      <CardDescription>Apply a discount to all notebooks from a single publisher.</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex flex-col sm:flex-row items-center gap-4">
-                          <Select onValueChange={setNotebookSelectedPublisher} value={notebookSelectedPublisher || ''}>
-                              <SelectTrigger className="w-full sm:w-[250px]">
-                                  <SelectValue placeholder="Select Publisher" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                  {notebookPublishers.map((pub) => (
-                                      <SelectItem key={pub} value={pub}>{pub}</SelectItem>
-                                  ))}
-                              </SelectContent>
-                          </Select>
-                          <Input
-                              type="number"
-                              placeholder="Discount %"
-                              className="w-full sm:w-[150px]"
-                              value={notebookPublisherDiscount}
-                              onChange={(e) => setNotebookPublisherDiscount(parseFloat(e.target.value) || 0)}
-                              aria-label="Notebook Publisher Discount"
-                          />
-                          <Button onClick={() => handleApplyPublisherDiscount('Notebook')} className="w-full sm:w-auto">
-                              Apply Discount
-                          </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
+            <BookTable
+              title="Textbooks"
+              description={`Manage details for ${filteredTextbooks.length} textbooks`}
+              books={filteredTextbooks}
+              onBookUpdate={(id, field, value) => handleBookUpdate(id, field, value, 'textbook')}
+              onApplyAll={(field, value) => handleApplyAll(field, value, 'textbook')}
+              filters={textbookFilters}
+              onFilterChange={setTextbookFilters}
+            />
 
-                  <Card className="shadow-md">
-                    <CardHeader>
-                      <CardTitle className="text-xl flex items-center gap-2">
-                        <Edit className="h-5 w-5 text-primary"/>
-                        Bulk Notebook Editor
-                      </CardTitle>
-                      <CardDescription>Apply changes to multiple notebooks by name.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="space-y-2">
-                        <Label>Book Names</Label>
-                        <Popover open={isNotebookBulkPickerOpen} onOpenChange={setIsNotebookBulkPickerOpen}>
-                            <PopoverTrigger asChild>
-                                <Button
-                                    variant="outline"
-                                    role="combobox"
-                                    aria-expanded={isNotebookBulkPickerOpen}
-                                    className="w-full justify-between h-auto"
-                                >
-                                    <div className="flex flex-wrap gap-1">
-                                        {notebookBulkSelectedBooks.length > 0 ? notebookBulkSelectedBooks.map(book => (
-                                            <Badge key={book} variant="secondary" className="mr-1">
-                                                {book}
-                                                <div
-                                                    role="button"
-                                                    tabIndex={0}
-                                                    className="ml-1 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        setNotebookBulkSelectedBooks(notebookBulkSelectedBooks.filter(b => b !== book));
-                                                    }}
-                                                    onKeyDown={(e) => {
-                                                      if (e.key === 'Enter' || e.key === ' ') {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        setNotebookBulkSelectedBooks(notebookBulkSelectedBooks.filter(b => b !== book));
-                                                      }
-                                                    }}
-                                                >
-                                                    <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                                                </div>
-                                            </Badge>
-                                        )) : "Select notebooks..."}
-                                    </div>
-                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                                <Command>
-                                    <CommandInput placeholder="Search notebook..." />
-                                    <CommandList>
-                                        <CommandEmpty>No book found.</CommandEmpty>
-                                        <CommandGroup>
-                                            {notebookNames.map((book) => (
-                                                <CommandItem
-                                                    key={book}
-                                                    value={book}
-                                                    onSelect={(currentValue) => {
-                                                        setNotebookBulkSelectedBooks(
-                                                            notebookBulkSelectedBooks.includes(currentValue)
-                                                                ? notebookBulkSelectedBooks.filter(b => b !== currentValue)
-                                                                : [...notebookBulkSelectedBooks, currentValue]
-                                                        )
-                                                    }}
-                                                >
-                                                    <Check
-                                                        className={`mr-2 h-4 w-4 ${notebookBulkSelectedBooks.includes(book) ? "opacity-100" : "opacity-0"}`}
-                                                    />
-                                                    {book}
-                                                </CommandItem>
-                                            ))}
-                                        </CommandGroup>
-                                    </CommandList>
-                                </Command>
-                            </PopoverContent>
-                        </Popover>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                          <div className="space-y-2">
-                              <Label htmlFor="notebook-bulk-price">New Price</Label>
-                              <Input id="notebook-bulk-price" type="number" placeholder="e.g., 50" value={notebookBulkPrice} onChange={e => setNotebookBulkPrice(e.target.value)} />
-                          </div>
-                          <div className="space-y-2">
-                              <Label htmlFor="notebook-bulk-discount">New Discount (%)</Label>
-                              <Input id="notebook-bulk-discount" type="number" placeholder="e.g., 20" value={notebookBulkDiscount} onChange={e => setNotebookBulkDiscount(e.target.value)} />
-                          </div>
-                          <div className="space-y-2">
-                              <Label htmlFor="notebook-bulk-tax">New Tax (%)</Label>
-                              <Input id="notebook-bulk-tax" type="number" placeholder="e.g., 5" value={notebookBulkTax} onChange={e => setNotebookBulkTax(e.target.value)} />
-                          </div>
-                      </div>
-                      <Button onClick={() => handleBulkUpdate('Notebook')} className="w-full sm:w-auto mt-4">
-                          Apply Bulk Changes
-                      </Button>
-                    </CardContent>
-                  </Card>
-                </div>
-            </div>
+            <BookTable
+              title="Notebooks"
+              description={`Manage details for ${filteredNotebooks.length} notebooks`}
+              books={filteredNotebooks}
+              onBookUpdate={(id, field, value) => handleBookUpdate(id, field, value, 'notebook')}
+              onApplyAll={(field, value) => handleApplyAll(field, value, 'notebook')}
+              isNotebookTable
+              filters={notebookFilters}
+              onFilterChange={setNotebookFilters}
+            />
 
-             <BookTable
-               title="Notebooks"
-               description="List of notebooks and other stationery."
-               books={filteredNotebooks}
-               onBookUpdate={(id, field, value) => handleUpdateBook('notebooks', id, field, value)}
-               onApplyAll={(field, value) => handleApplyAll('notebooks', field, value)}
-               isNotebookTable={true}
-               filters={notebookFilters}
-               onFilterChange={setNotebookFilters}
-             />
+            <Card className="shadow-lg">
+                <CardHeader>
+                    <CardTitle className="text-accent">Final Totals</CardTitle>
+                    <CardDescription>A summary of all costs.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="rounded-lg bg-muted p-4">
+                            <h3 className="font-semibold text-muted-foreground">Textbook Total</h3>
+                            <p className="text-2xl font-bold">{formatCurrency(totals.textbookTotals.finalTotal)}</p>
+                        </div>
+                        <div className="rounded-lg bg-muted p-4">
+                            <h3 className="font-semibold text-muted-foreground">Notebook Total</h3>
+                            <p className="text-2xl font-bold">{formatCurrency(totals.notebookTotals.finalTotal)}</p>
+                        </div>
+                    </div>
+                    <Separator />
+                    <div className="flex items-center justify-between rounded-lg bg-primary/10 p-6">
+                        <h3 className="text-xl font-bold text-primary">Grand Total</h3>
+                        <p className="text-3xl font-extrabold text-primary">{formatCurrency(totals.grandTotal)}</p>
+                    </div>
+                </CardContent>
+            </Card>
           </div>
-          
-           <Card className="shadow-lg mt-8">
-            <CardHeader>
-                <CardTitle>Calculation Summary</CardTitle>
-                <CardDescription>A summary of the calculated totals.</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-3">
-                <div className="flex flex-col space-y-1.5 rounded-lg border bg-secondary/50 p-4">
-                    <Label>Textbooks Total</Label>
-                    <p className="text-2xl font-bold">{formatCurrency(totals.textbookTotal)}</p>
-                </div>
-                <div className="flex flex-col space-y-1.5 rounded-lg border bg-secondary/50 p-4">
-                    <Label>Notebooks Total</Label>
-                    <p className="text-2xl font-bold">{formatCurrency(totals.notebookTotal)}</p>
-                </div>
-                <div className="flex flex-col space-y-1.5 rounded-lg border bg-primary/10 p-4">
-                    <Label className="text-primary">Grand Total</Label>
-                    <p className="text-2xl font-bold text-primary">{formatCurrency(totals.grandTotal)}</p>
-                </div>
-            </CardContent>
-           </Card>
-        </div>
-      )}
-      
-      {isDataLoaded && (
-        <footer className="sticky bottom-0 z-40 mt-auto border-t bg-background/95 py-4 backdrop-blur-sm">
-          <div className="container flex flex-col items-center justify-between gap-4 md:flex-row">
-            <div className="flex flex-wrap items-center justify-center gap-4 text-sm md:gap-6 md:text-base">
-                 <div className="flex items-baseline gap-2">
-                    <Calculator className="h-5 w-5 text-muted-foreground"/>
-                    <span className="text-muted-foreground">Grand Total:</span>
-                    <span className="font-bold text-lg text-primary">{formatCurrency(totals.grandTotal)}</span>
-                </div>
-            </div>
-            <div className="flex w-full shrink-0 gap-2 sm:w-auto">
-                <Button variant="outline" onClick={handleReset} className="flex-1">
-                    <Undo2 className="mr-2 h-4 w-4" /> Reset
-                </Button>
-                <Button onClick={handleDownload} className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90">
-                    <Download className="mr-2 h-4 w-4" /> Download
-                </Button>
-            </div>
-          </div>
-        </footer>
-      )}
+        )}
+      </div>
     </main>
   );
 }

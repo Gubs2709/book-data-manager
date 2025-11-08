@@ -1,9 +1,8 @@
-
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
 import { useFirebase, useUser } from '@/firebase';
-import { collectionGroup, getDocs, query, where, DocumentData } from 'firebase/firestore';
+import { collection, getDocs, DocumentData } from 'firebase/firestore';
 import type { BookType, DenormalizedBook } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -24,10 +23,10 @@ export default function DataExplorer() {
 
   useEffect(() => {
     async function fetchAllBooks() {
-      // **CRITICAL FIX**: Only fetch data if a non-anonymous user is authenticated.
+      // Ensure a user is signed in before fetching
       if (!user || user.isAnonymous || !firestore) {
         setIsLoading(false);
-        setAllBooks([]); // Clear any previous data
+        setAllBooks([]);
         return;
       }
 
@@ -35,77 +34,67 @@ export default function DataExplorer() {
       try {
         const books: DenormalizedBook[] = [];
 
-        const textbookQuery = query(collectionGroup(firestore, 'textbooks'), where('userId', '==', user.uid));
-        const notebookQuery = query(collectionGroup(firestore, 'notebooks'), where('userId', '==', user.uid));
-        
-        const textbookPromise = getDocs(textbookQuery).catch(err => {
-          errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: 'textbooks', operation: 'list'
-          }));
-          return { docs: [] }; // Return empty result on error
-        });
-  
-        const notebookPromise = getDocs(notebookQuery).catch(err => {
-          errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: 'notebooks', operation: 'list'
-          }));
-          return { docs: [] }; // Return empty result on error
-        });
-        
-        const [textbookSnap, notebookSnap] = await Promise.all([
-          textbookPromise,
-          notebookPromise,
+        // ✅ Fetch from user’s subcollections (matches your Firestore)
+        const uploadsRef = collection(firestore, "users", user.uid, "uploads");
+        const frequentRef = collection(firestore, "users", user.uid, "frequent_book_data");
+
+        // Fetch both collections safely
+        const [uploadsSnap, frequentSnap] = await Promise.all([
+          getDocs(uploadsRef).catch(err => {
+            errorEmitter.emit("permission-error", new FirestorePermissionError({
+              path: "uploads", operation: "list"
+            }));
+            return { docs: [] };
+          }),
+          getDocs(frequentRef).catch(err => {
+            errorEmitter.emit("permission-error", new FirestorePermissionError({
+              path: "frequent_book_data", operation: "list"
+            }));
+            return { docs: [] };
+          }),
         ]);
 
-        textbookSnap.docs.forEach(doc => {
+        // Add uploads data (you can tag them as Textbooks)
+        uploadsSnap.docs.forEach(doc => {
           const bookData = doc.data() as Omit<DenormalizedBook, 'type'>;
           books.push({
             ...bookData,
             id: doc.id,
             type: 'Textbook',
-            userId: user.uid
+            userId: user.uid,
           });
         });
 
-        notebookSnap.docs.forEach(doc => {
+        // Add frequent book data (you can tag them as Notebooks)
+        frequentSnap.docs.forEach(doc => {
           const bookData = doc.data() as Omit<DenormalizedBook, 'type'>;
           books.push({
             ...bookData,
             id: doc.id,
             type: 'Notebook',
-            userId: user.uid
+            userId: user.uid,
           });
         });
 
         setAllBooks(books);
       } catch (error) {
-        console.error("An error occurred while fetching book data:", error);
+        console.error("Error fetching Firestore data:", error);
       } finally {
         setIsLoading(false);
       }
     }
-    
-    // Run fetchAllBooks only when user status is definitively known and not loading.
-    if (!isUserLoading) {
-        fetchAllBooks();
-    }
 
+    if (!isUserLoading) {
+      fetchAllBooks();
+    }
   }, [user, isUserLoading, firestore]);
 
+  // Filtering logic
   const filteredBooks = useMemo(() => {
     return allBooks
-      .filter(book => {
-        if (classFilter === 'all') return true;
-        return book.class === classFilter;
-      })
-      .filter(book => {
-        if (publisherFilter === 'all') return true;
-        return book.publisher === publisherFilter;
-      })
-      .filter(book => {
-        if (bookTypeFilter === 'all') return true;
-        return book.type === bookTypeFilter;
-      });
+      .filter(book => (classFilter === 'all' ? true : book.class === classFilter))
+      .filter(book => (publisherFilter === 'all' ? true : book.publisher === publisherFilter))
+      .filter(book => (bookTypeFilter === 'all' ? true : book.type === bookTypeFilter));
   }, [allBooks, classFilter, publisherFilter, bookTypeFilter]);
 
   const allPublishers = useMemo(() => {
@@ -126,15 +115,20 @@ export default function DataExplorer() {
       currency: "INR",
     }).format(value);
   };
-  
+
   const showLoadingState = isLoading || isUserLoading;
 
   return (
     <main className="container flex-grow py-8">
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle className="text-2xl font-bold tracking-tight text-primary">Data Explorer</CardTitle>
-          <CardDescription>View and filter all your saved book data from previous uploads.</CardDescription>
+          <CardTitle className="text-2xl font-bold tracking-tight text-primary">
+            Data Explorer
+          </CardTitle>
+          <CardDescription>
+            View and filter all your saved book data from previous uploads.
+          </CardDescription>
+
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Select onValueChange={setClassFilter} defaultValue="all">
               <SelectTrigger>
@@ -142,19 +136,32 @@ export default function DataExplorer() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Classes</SelectItem>
-                {allClasses.map(c => <SelectItem key={c} value={c}>Class {c}</SelectItem>)}
+                {allClasses.map(c => (
+                  <SelectItem key={c} value={c}>
+                    Class {c}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+
             <Select onValueChange={setPublisherFilter} defaultValue="all">
               <SelectTrigger>
                 <SelectValue placeholder="Filter by Publisher" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Publishers</SelectItem>
-                {allPublishers.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                {allPublishers.map(p => (
+                  <SelectItem key={p} value={p}>
+                    {p}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
-            <Select onValueChange={(value) => setBookTypeFilter(value as BookType | 'all')} defaultValue="all">
+
+            <Select
+              onValueChange={value => setBookTypeFilter(value as BookType | 'all')}
+              defaultValue="all"
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Filter by Type" />
               </SelectTrigger>
@@ -166,6 +173,7 @@ export default function DataExplorer() {
             </Select>
           </div>
         </CardHeader>
+
         <CardContent>
           <div className="relative overflow-x-auto">
             <Table>
@@ -182,21 +190,24 @@ export default function DataExplorer() {
                   <TableHead className="text-right">Tax (%)</TableHead>
                 </TableRow>
               </TableHeader>
+
               <TableBody>
                 {showLoadingState ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={9} className="h-12 text-center">Loading...</TableCell>
+                      <TableCell colSpan={9} className="h-12 text-center">
+                        Loading...
+                      </TableCell>
                     </TableRow>
                   ))
                 ) : !user || user.isAnonymous ? (
-                   <TableRow>
+                  <TableRow>
                     <TableCell colSpan={9} className="h-24 text-center">
-                      Please sign in with Google to view your data.
+                      Please sign in to view your data.
                     </TableCell>
                   </TableRow>
                 ) : filteredBooks.length > 0 ? (
-                  filteredBooks.map((book) => (
+                  filteredBooks.map(book => (
                     <TableRow key={book.id}>
                       <TableCell>{book.class}</TableCell>
                       <TableCell>{book.courseCombination}</TableCell>
@@ -228,4 +239,3 @@ export default function DataExplorer() {
     </main>
   );
 }
-    
