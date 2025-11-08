@@ -1,6 +1,7 @@
+
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import type { Book } from "@/lib/types";
 import { TEXTBOOKS_MOCK, NOTEBOOKS_MOCK } from "@/lib/data";
 import { BookTable } from "./book-table";
@@ -25,11 +26,15 @@ import {
 } from "@/components/ui/select";
 import { Calculator, Download, FileUp, Undo2 } from "lucide-react";
 import { Separator } from "./ui/separator";
+import * as XLSX from 'xlsx';
+import { useToast } from "@/hooks/use-toast";
 
 export default function CalculatorDashboard() {
   const [textbooks, setTextbooks] = useState<Book[]>([]);
   const [notebooks, setNotebooks] = useState<Book[]>([]);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
 
   // Form state
   const [className, setClassName] = useState("12");
@@ -52,7 +57,7 @@ export default function CalculatorDashboard() {
     return { textbookTotal, notebookTotal, grandTotal };
   }, [textbooks, notebooks]);
 
-  const handleProcessUpload = () => {
+  const handleProcessMockData = () => {
     const applyInitialValues = (mockData: Book[], discount: number, tax: number) =>
       mockData.map((book) => {
         const newBook = { ...book, discount, tax };
@@ -62,24 +67,78 @@ export default function CalculatorDashboard() {
     setTextbooks(applyInitialValues(TEXTBOOKS_MOCK, initialTextbookDiscount, initialTextbookTax));
     setNotebooks(applyInitialValues(NOTEBOOKS_MOCK, initialNotebookDiscount, initialNotebookTax));
     setIsDataLoaded(true);
+    toast({ title: "Success", description: "Mock data loaded successfully." });
   };
   
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = e.target?.result;
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        const textbookSheet = workbook.Sheets['Textbooks'];
+        const notebookSheet = workbook.Sheets['Notebooks'];
+
+        if (!textbookSheet && !notebookSheet) {
+          throw new Error("Excel file must contain 'Textbooks' and/or 'Notebooks' sheets.");
+        }
+
+        const parseSheet = (sheet: XLSX.WorkSheet, discount: number, tax: number): Book[] => {
+            if (!sheet) return [];
+            const jsonData = XLSX.utils.sheet_to_json<any>(sheet);
+            return jsonData.map((row, index) => {
+                const book: Book = {
+                    id: row.id || index + 1,
+                    bookName: row.bookName || '',
+                    subject: row.subject || 'N/A',
+                    price: parseFloat(row.price) || 0,
+                    discount,
+                    tax,
+                    finalPrice: 0,
+                };
+                return { ...book, finalPrice: calculateFinalPrice(book) };
+            });
+        };
+
+        const loadedTextbooks = parseSheet(textbookSheet, initialTextbookDiscount, initialTextbookTax);
+        const loadedNotebooks = parseSheet(notebookSheet, initialNotebookDiscount, initialNotebookTax);
+        
+        setTextbooks(loadedTextbooks);
+        setNotebooks(loadedNotebooks);
+        setIsDataLoaded(true);
+        toast({ title: "Success", description: "Excel file processed successfully." });
+
+      } catch (error: any) {
+        console.error("Error processing Excel file:", error);
+        toast({ variant: 'destructive', title: "Error", description: error.message || "Failed to process Excel file." });
+        setIsDataLoaded(false);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
   const handleReset = () => {
     setIsDataLoaded(false);
     setTextbooks([]);
     setNotebooks([]);
+    if(fileInputRef.current) {
+        fileInputRef.current.value = "";
+    }
   }
   
-  const handleUpdateBook = (table: 'textbooks' | 'notebooks', bookId: number, field: keyof Omit<Book, 'id' | 'subject' | 'price' | 'finalPrice'>, value: string | number) => {
+  const handleUpdateBook = (table: 'textbooks' | 'notebooks', bookId: number, field: keyof Omit<Book, 'id' | 'finalPrice'>, value: string | number) => {
     const updater = table === 'textbooks' ? setTextbooks : setNotebooks;
     updater(prevBooks =>
       prevBooks.map(book => {
         if (book.id === bookId) {
           const updatedBook = { ...book, [field]: value };
-          if (field !== 'bookName') {
-            return { ...updatedBook, finalPrice: calculateFinalPrice(updatedBook) };
-          }
-          return updatedBook;
+          return { ...updatedBook, finalPrice: calculateFinalPrice(updatedBook) };
         }
         return book;
       })
@@ -126,8 +185,7 @@ export default function CalculatorDashboard() {
               <CardHeader>
                 <CardTitle className="text-2xl font-bold tracking-tight text-primary">Setup Calculation</CardTitle>
                 <CardDescription>
-                  Enter metadata and default values before processing the book list. 
-                  This simulates uploading and processing an Excel file.
+                  Enter metadata and default values before processing the book list.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -175,10 +233,18 @@ export default function CalculatorDashboard() {
                     </div>
                   </div>
                 </div>
+                <Separator />
+                <div className="space-y-2">
+                    <Label htmlFor="excel-upload">Upload Book List (Excel)</Label>
+                    <Input id="excel-upload" type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx, .xls" className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"/>
+                    <p className="text-xs text-muted-foreground">
+                        Your Excel file should have two sheets: "Textbooks" and "Notebooks". Each sheet should contain columns: 'bookName', 'subject', and 'price'.
+                    </p>
+                </div>
               </CardContent>
               <CardFooter>
-                <Button size="lg" className="w-full font-bold" onClick={handleProcessUpload}>
-                  <FileUp className="mr-2 h-4 w-4" /> Mock Upload & Process
+                 <Button size="lg" className="w-full font-bold" onClick={handleProcessMockData}>
+                  <FileUp className="mr-2 h-4 w-4" /> Use Mock Data Instead
                 </Button>
               </CardFooter>
             </Card>

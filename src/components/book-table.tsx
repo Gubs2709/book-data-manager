@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from "react";
@@ -24,7 +25,7 @@ interface BookTableProps {
   title: string;
   description: string;
   books: Book[];
-  onBookUpdate: (bookId: number, field: "bookName" | "price" | "discount" | "tax", value: string | number) => void;
+  onBookUpdate: (bookId: number, field: keyof Omit<Book, 'id' | 'finalPrice'>, value: string | number) => void;
   onApplyAll: (field: "discount" | "tax", value: number) => void;
 }
 
@@ -85,8 +86,8 @@ export function BookTable({
             <TableHeader>
               <TableRow>
                 <TableHead className="min-w-[250px] font-semibold">Book Name</TableHead>
-                <TableHead className="font-semibold">Subject</TableHead>
-                <TableHead className="text-right font-semibold">Price</TableHead>
+                <TableHead className="min-w-[150px] font-semibold">Subject</TableHead>
+                <TableHead className="min-w-[120px] text-right font-semibold">Price</TableHead>
                 <TableHead className="w-[120px] text-right font-semibold">Discount (%)</TableHead>
                 <TableHead className="w-[120px] text-right font-semibold">Tax (%)</TableHead>
                 <TableHead className="text-right font-semibold">Final Price</TableHead>
@@ -105,9 +106,25 @@ export function BookTable({
                       aria-label={`Book name for ${book.bookName}`}
                     />
                   </TableCell>
-                  <TableCell>{book.subject}</TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(book.price)}
+                  <TableCell>
+                     <Input
+                      value={book.subject}
+                      onChange={(e) =>
+                        onBookUpdate(book.id, "subject", e.target.value)
+                      }
+                      aria-label={`Subject for ${book.bookName}`}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Input
+                      type="number"
+                      value={book.price}
+                      onChange={(e) =>
+                        onBookUpdate(book.id, "price", parseFloat(e.target.value) || 0)
+                      }
+                      className="text-right"
+                      aria-label={`Price for ${book.bookName}`}
+                    />
                   </TableCell>
                   <TableCell>
                     <Input
