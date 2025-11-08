@@ -16,7 +16,7 @@
  * Key Security Decisions:
  * - User listing is explicitly disallowed.
  * - Path-based ownership is enforced for most user-related data.
- * - For collectionGroup queries on 'textbooks' and 'notebooks', ownership is verified by checking a `userId` field on the document itself.
+ * - For collectionGroup queries on 'textbooks' and 'notebooks', ownership is verified by checking a `userId` field on the document itself. This is critical for the Data Explorer.
  * - Data consistency between paths and document data is validated on create and update.
  *
  * Denormalization for Authorization:
