@@ -9,6 +9,7 @@ import {
   signInWithPopup,
   GoogleAuthProvider,
   fetchSignInMethodsForEmail,
+  sendEmailVerification,
   AuthError,
 } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
@@ -144,7 +145,14 @@ export default function AuthForm() {
     }
     setIsLoading(true);
     try {
-      await createUserWithEmailAndPassword(auth, email.trim(), password.trim());
+      const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password.trim());
+      if (userCredential.user) {
+        await sendEmailVerification(userCredential.user);
+        toast({
+          title: 'Verification Email Sent',
+          description: 'A verification link has been sent to your email address. Please verify your account.',
+        });
+      }
       router.push('/');
     } catch (error) {
       handleAuthError(error as AuthError);
@@ -153,7 +161,6 @@ export default function AuthForm() {
 
   const resetState = () => {
     setStep('email');
-    setEmail('');
     setPassword('');
   }
 
@@ -192,7 +199,7 @@ export default function AuthForm() {
               <Mail className="mr-2 h-4 w-4" />
               Continue with Email
             </Button>
-            <Button variant="link" size="sm" onClick={resetState}>
+            <Button variant="link" size="sm" onClick={() => { setStep('email'); setEmail(''); }}>
                 Use a different email
             </Button>
           </div>
@@ -247,5 +254,3 @@ export default function AuthForm() {
     </div>
   );
 }
-
-    
