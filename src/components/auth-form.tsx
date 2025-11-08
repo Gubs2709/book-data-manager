@@ -64,6 +64,10 @@ export default function AuthForm() {
             title = 'Invalid Credentials';
             description = 'The email or password you entered is incorrect.';
             break;
+        case 'auth/missing-password':
+            title = 'Missing Password';
+            description = 'Please enter your password to continue.';
+            break;
         case 'auth/email-already-in-use':
             title = 'Email In Use';
             description = 'This email is already associated with an account. Please sign in instead.';
@@ -114,7 +118,10 @@ export default function AuthForm() {
   };
 
   const handleEmailPasswordSignIn = async () => {
-    if (!auth) return;
+    if (!auth || !password) {
+      toast({ variant: 'destructive', title: 'Missing Password', description: 'Please enter your password.' });
+      return;
+    }
     setIsLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
@@ -125,7 +132,14 @@ export default function AuthForm() {
   };
   
   const handleEmailPasswordSignUp = async () => {
-    if (!auth) return;
+    if (!auth || !password) {
+        toast({ variant: 'destructive', title: 'Missing Password', description: 'Please enter a password to create an account.' });
+        return;
+    }
+    if (password.length < 6) {
+        toast({ variant: 'destructive', title: 'Weak Password', description: 'Your password must be at least 6 characters long.' });
+        return;
+    }
     setIsLoading(true);
     try {
       await createUserWithEmailAndPassword(auth, email, password);
@@ -153,7 +167,7 @@ export default function AuthForm() {
                   disabled={isLoading}
                 />
               </div>
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button type="submit" className="w-full" disabled={isLoading || !email}>
                 {isLoading ? 'Checking...' : 'Continue'}
               </Button>
             </div>
@@ -176,6 +190,7 @@ export default function AuthForm() {
           </div>
         );
       case 'password':
+        const isPasswordInvalid = password.length === 0;
         return (
             <div className="space-y-4">
                 <div className="space-y-2">
@@ -195,10 +210,10 @@ export default function AuthForm() {
                     />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                    <Button onClick={handleEmailPasswordSignIn} disabled={isLoading || isGoogleLoading}>
+                    <Button onClick={handleEmailPasswordSignIn} disabled={isLoading || isGoogleLoading || isPasswordInvalid}>
                         {isLoading ? 'Signing In...' : 'Sign In'}
                     </Button>
-                    <Button variant="secondary" onClick={handleEmailPasswordSignUp} disabled={isLoading || isGoogleLoading}>
+                    <Button variant="secondary" onClick={handleEmailPasswordSignUp} disabled={isLoading || isGoogleLoading || isPasswordInvalid}>
                         {isLoading ? 'Creating...' : 'Create Account'}
                     </Button>
                 </div>
