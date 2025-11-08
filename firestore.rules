@@ -117,7 +117,7 @@ service cloud.firestore {
      * @principle Allows a user to list only their own textbooks across all uploads, secured by a 'userId' field check.
      */
     match /{path=**}/textbooks/{textbookId} {
-      allow list: if isSignedIn() && request.query.where.userId == request.auth.uid;
+      allow list: if isSignedIn() && request.query.filters.size() == 1 && request.query.filters[0].field.stringValue() == 'userId' && request.query.filters[0].op.stringValue() == '==' && request.query.filters[0].value.stringValue() == request.auth.uid;
     }
 
     /**
@@ -127,7 +127,7 @@ service cloud.firestore {
      * @principle Allows a user to list only their own notebooks across all uploads, secured by a 'userId' field check.
      */
      match /{path=**}/notebooks/{notebookId} {
-      allow list: if isSignedIn() && request.query.where.userId == request.auth.uid;
+      allow list: if isSignedIn() && request.query.filters.size() == 1 && request.query.filters[0].field.stringValue() == 'userId' && request.query.filters[0].op.stringValue() == '==' && request.query.filters[0].value.stringValue() == request.auth.uid;
     }
 
     /**
