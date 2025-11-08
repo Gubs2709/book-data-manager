@@ -25,7 +25,7 @@ interface BookTableProps {
   title: string;
   description: string;
   books: Book[];
-  onBookUpdate: (bookId: number, field: keyof Omit<Book, 'id' | 'finalPrice'>, value: string | number) => void;
+  onBookUpdate: (bookId: number | string, field: keyof Omit<Book, 'id' | 'finalPrice' | 'uploadId'>, value: string | number) => void;
   onApplyAll: (field: "discount" | "tax", value: number) => void;
   isNotebookTable?: boolean;
   filters: BookFilters;

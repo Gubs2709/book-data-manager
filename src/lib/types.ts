@@ -1,7 +1,7 @@
 import type { Timestamp } from "firebase/firestore";
 
 export interface Book {
-  id: number;
+  id: number | string; // Allow string for firestore ids
   bookName: string;
   subject: string;
   publisher: string;
@@ -10,6 +10,7 @@ export interface Book {
   tax: number;
   finalPrice: number;
   pages?: number;
+  uploadId: string;
 }
 
 export type BookType = 'Textbook' | 'Notebook';

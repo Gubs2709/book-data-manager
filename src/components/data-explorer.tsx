@@ -3,7 +3,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useFirebase, useUser, useMemoFirebase } from '@/firebase';
-import { collection, getDocs, query, collectionGroup, where, Query } from 'firebase/firestore';
+import { collection, getDocs, query, collectionGroup, where, Query, doc } from 'firebase/firestore';
 import type { Upload, Book, BookType } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -29,15 +29,10 @@ export default function DataExplorer() {
   const [bookTypeFilter, setBookTypeFilter] = useState<BookType | 'all'>('all');
   const [allBooks, setAllBooks] = useState<EnrichedBook[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-
-  const uploadsQuery = useMemoFirebase(
-    () => (user && firestore ? collection(firestore, 'users', user.uid, 'uploads') : null),
-    [firestore, user]
-  );
   
   useEffect(() => {
     async function fetchAllBooks() {
-        if (!user || !firestore || !uploadsQuery) {
+        if (!user || !firestore) {
             setIsLoading(false);
             return;
         }
@@ -46,16 +41,34 @@ export default function DataExplorer() {
         const enrichedBooks: EnrichedBook[] = [];
 
         try {
-            const uploadSnapshots = await getDocs(uploadsQuery);
-            const uploads = uploadSnapshots.docs.map(doc => ({ id: doc.id, ...doc.data() } as Upload));
+            // 1. Fetch all uploads in one go
+            const uploadsRef = collection(firestore, 'users', user.uid, 'uploads');
+            const uploadSnapshots = await getDocs(uploadsRef);
+            const uploadsMap = new Map<string, Upload>();
+            uploadSnapshots.docs.forEach(doc => {
+                uploadsMap.set(doc.id, { id: doc.id, ...doc.data() } as Upload);
+            });
 
-            for (const upload of uploads) {
-                const textbooksRef = collection(firestore, 'users', user.uid, 'uploads', upload.id, 'textbooks');
-                const notebooksRef = collection(firestore, 'users', user.uid, 'uploads', upload.id, 'notebooks');
+            // 2. Fetch all textbooks and notebooks using collectionGroup queries
+            const textbooksQuery = query(
+                collectionGroup(firestore, 'textbooks'),
+                where('uploadId', 'in', Array.from(uploadsMap.keys()))
+            );
+            const notebooksQuery = query(
+                collectionGroup(firestore, 'notebooks'),
+                where('uploadId', 'in', Array.from(uploadsMap.keys()))
+            );
+            
+            const [textbookSnap, notebookSnap] = await Promise.all([
+                getDocs(textbooksQuery),
+                getDocs(notebooksQuery)
+            ]);
 
-                const textbookSnap = await getDocs(textbooksRef);
-                textbookSnap.forEach(doc => {
-                    const bookData = doc.data() as Book;
+            // 3. Process and enrich the data
+            textbookSnap.forEach(doc => {
+                const bookData = doc.data() as Book;
+                const upload = uploadsMap.get(bookData.uploadId);
+                if (upload) {
                     enrichedBooks.push({
                         ...bookData,
                         id: doc.id,
@@ -65,11 +78,13 @@ export default function DataExplorer() {
                         uploadTimestamp: upload.uploadTimestamp.toDate(),
                         type: 'Textbook'
                     });
-                });
-                
-                const notebookSnap = await getDocs(notebooksRef);
-                notebookSnap.forEach(doc => {
-                    const bookData = doc.data() as Book;
+                }
+            });
+            
+            notebookSnap.forEach(doc => {
+                const bookData = doc.data() as Book;
+                const upload = uploadsMap.get(bookData.uploadId);
+                 if (upload) {
                     enrichedBooks.push({
                         ...bookData,
                         id: doc.id,
@@ -79,8 +94,9 @@ export default function DataExplorer() {
                         uploadTimestamp: upload.uploadTimestamp.toDate(),
                         type: 'Notebook'
                     });
-                });
-            }
+                }
+            });
+            
             setAllBooks(enrichedBooks);
         } catch (error) {
             console.error("Error fetching all book data:", error);
@@ -90,7 +106,7 @@ export default function DataExplorer() {
     }
 
     fetchAllBooks();
-  }, [user, firestore, uploadsQuery]);
+  }, [user, firestore]);
 
 
   const filteredBooks = useMemo(() => {

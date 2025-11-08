@@ -116,7 +116,7 @@ export default function CalculatorDashboard() {
     return map;
   }, [frequentBookData]);
 
-  const calculateFinalPrice = (book: Omit<Book, 'finalPrice' | 'id'>): number => {
+  const calculateFinalPrice = (book: Omit<Book, 'finalPrice' | 'id' | 'uploadId'>): number => {
     const priceAfterDiscount = book.price * (1 - book.discount / 100);
     const finalPrice = priceAfterDiscount * (1 + book.tax / 100);
     return finalPrice;
@@ -224,15 +224,15 @@ export default function CalculatorDashboard() {
 
 
   const processAndLoadData = async (
-    textbookData: Book[], 
-    notebookData: Book[],
+    textbookData: Omit<Book, 'uploadId'>[], 
+    notebookData: Omit<Book, 'uploadId'>[],
   ) => {
     const uploadId = await createNewUploadRecord();
     if (!uploadId) return;
 
-    const applyInitialValues = (mockData: Book[], discount: number, tax: number) =>
-      mockData.map((book) => {
-        const newBook = { ...book, discount, tax };
+    const applyInitialValues = (books: Omit<Book, 'uploadId'>[], discount: number, tax: number) =>
+      books.map((book) => {
+        const newBook = { ...book, discount, tax, uploadId };
         return { ...newBook, finalPrice: calculateFinalPrice(newBook) };
       });
 
@@ -271,7 +271,7 @@ export default function CalculatorDashboard() {
           throw new Error("Excel file must contain 'Textbooks' and/or 'Notebooks' sheets.");
         }
 
-        const parseSheet = (sheet: XLSX.WorkSheet): Book[] => {
+        const parseSheet = (sheet: XLSX.WorkSheet): Omit<Book, 'uploadId'>[] => {
             if (!sheet) return [];
             const jsonData = XLSX.utils.sheet_to_json<any>(sheet);
             let parsedBooks = jsonData.map((row, index) => ({
@@ -335,7 +335,7 @@ export default function CalculatorDashboard() {
     setDocumentNonBlocking(docRef, dataToSave, { merge: true });
   }
   
-  const handleUpdateBook = (table: 'textbooks' | 'notebooks', bookId: number, field: keyof Omit<Book, 'id' | 'finalPrice'>, value: string | number) => {
+  const handleUpdateBook = (table: 'textbooks' | 'notebooks', bookId: number | string, field: keyof Omit<Book, 'id' | 'finalPrice' | 'uploadId'>, value: string | number) => {
     const updater = table === 'textbooks' ? setTextbooks : setNotebooks;
     const bookType = table === 'textbooks' ? 'Textbook' : 'Notebook';
     updater(prevBooks =>
@@ -493,7 +493,7 @@ export default function CalculatorDashboard() {
     const processedBooks = new Set<string>();
   
     allBooks.forEach(book => {
-      const bookType = textbooks.includes(book) ? 'Textbook' : 'Notebook';
+      const bookType = 'uploadId' in book && textbooks.some(tb => tb.id === book.id) ? 'Textbook' : 'Notebook';
       const docId = createBookId(book, bookType);
       
       if (docId && !processedBooks.has(docId)) {
