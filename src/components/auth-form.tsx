@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -61,6 +62,7 @@ export default function AuthForm() {
             break;
         case 'auth/user-not-found':
         case 'auth/wrong-password':
+        case 'auth/invalid-credential':
             title = 'Invalid Credentials';
             description = 'The email or password you entered is incorrect.';
             break;
@@ -92,7 +94,7 @@ export default function AuthForm() {
     if (!auth || !email) return;
     setIsLoading(true);
     try {
-      const methods = await fetchSignInMethodsForEmail(auth, email);
+      const methods = await fetchSignInMethodsForEmail(auth, email.trim());
       if (methods.includes('password') || methods.includes('google.com')) {
         setStep('provider'); // User exists, let them choose how to sign in
       } else {
@@ -124,7 +126,7 @@ export default function AuthForm() {
     }
     setIsLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      await signInWithEmailAndPassword(auth, email.trim(), password.trim());
       router.push('/');
     } catch (error) {
       handleAuthError(error as AuthError);
@@ -142,12 +144,18 @@ export default function AuthForm() {
     }
     setIsLoading(true);
     try {
-      await createUserWithEmailAndPassword(auth, email, password);
+      await createUserWithEmailAndPassword(auth, email.trim(), password.trim());
       router.push('/');
     } catch (error) {
       handleAuthError(error as AuthError);
     }
   };
+
+  const resetState = () => {
+    setStep('email');
+    setEmail('');
+    setPassword('');
+  }
 
   const renderStep = () => {
     switch (step) {
@@ -167,7 +175,7 @@ export default function AuthForm() {
                   disabled={isLoading}
                 />
               </div>
-              <Button type="submit" className="w-full" disabled={isLoading || !email}>
+              <Button type="submit" className="w-full" disabled={isLoading || !email.trim()}>
                 {isLoading ? 'Checking...' : 'Continue'}
               </Button>
             </div>
@@ -184,13 +192,13 @@ export default function AuthForm() {
               <Mail className="mr-2 h-4 w-4" />
               Continue with Email
             </Button>
-            <Button variant="link" size="sm" onClick={() => { setStep('email'); setEmail(''); }}>
+            <Button variant="link" size="sm" onClick={resetState}>
                 Use a different email
             </Button>
           </div>
         );
       case 'password':
-        const isPasswordInvalid = password.length === 0;
+        const isPasswordInvalid = password.trim().length === 0;
         return (
             <div className="space-y-4">
                 <div className="space-y-2">
@@ -217,7 +225,7 @@ export default function AuthForm() {
                         {isLoading ? 'Creating...' : 'Create Account'}
                     </Button>
                 </div>
-                <Button variant="link" size="sm" onClick={() => { setStep('email'); setEmail(''); setPassword(''); }}>
+                <Button variant="link" size="sm" onClick={resetState}>
                     Back to start
                 </Button>
             </div>
@@ -239,3 +247,5 @@ export default function AuthForm() {
     </div>
   );
 }
+
+    
